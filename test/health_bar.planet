@@ -26,6 +26,7 @@ def detect(){
     }
 }
 
+
 def set_health(){
     /execute store result score @s 40planet_health run data get entity @s Health
     execute(unless score "@s" "40planet_health" = "@s" "40planet_pre_health"){
@@ -41,7 +42,7 @@ def set_health(){
             execute(if entity @s[tag=text]){
                 set_score("@s", "40planet_health", health)
                 set_score("@s", "40planet_max_health", max_health)
-                /data merge entity @s {text:'["",{"score":{"name":"@s","objective":"40planet_health"},"color":"green"},{"text":"/","color":"green"},{"score":{"name":"@s","objective":"40planet_max_health"},"color":"green"}]'}
+                /data merge entity @s {text:["",{"score":{"name":"@s","objective":"40planet_health"},"color":"green"},{"text":"/","color":"green"},{"score":{"name":"@s","objective":"40planet_max_health"},"color":"green"}]}
             }
         }
     }
@@ -57,3 +58,4 @@ def tick_entity(){
     detect()
     set_health()
 }
+

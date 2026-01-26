@@ -15,6 +15,26 @@
   "categories": [
     "Programming Languages"
   ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "lint": "tsc --noEmit",
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.91.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.5.0",
+    "esbuild": "^0.23.0",
+    "vitest": "^2.0.0"
+  },
+  "dependencies": {
+    "@spyglassmc/core": "^0.4.39",
+    "@spyglassmc/java-edition": "^0.3.42",
+    "@spyglassmc/nbt": "^0.3.31"
+  },
   "contributes": {
     "languages": [
       {
@@ -35,6 +55,70 @@
         "scopeName": "source.planet",
         "path": "./syntaxes/comet.tmLanguage.json"
       }
-    ]
+    ],
+    "semanticTokenScopes": [
+      {
+        "language": "comet",
+        "scopes": {
+          "namespace": [
+            "entity.name.namespace.comet"
+          ],
+          "function": [
+            "entity.name.function.comet"
+          ],
+          "function.defaultLibrary": [
+            "support.function.comet"
+          ],
+          "variable": [
+            "variable.other.comet"
+          ],
+          "parameter": [
+            "variable.parameter.comet"
+          ],
+          "property": [
+            "variable.other.property.comet"
+          ],
+          "macro": [
+            "variable.other.macro.comet"
+          ]
+        }
+      }
+    ],
+    "configuration": {
+      "title": "Comet",
+      "properties": {
+        "comet.minecraftVersion": {
+          "type": "string",
+          "default": "1.21",
+          "description": "Minecraft version for command validation and completion"
+        },
+        "comet.defaultMcVersion": {
+          "type": "string",
+          "default": "1.21.11",
+          "description": "Default Minecraft version for new comet.config.json files"
+        },
+        "comet.diagnostics.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable/disable diagnostics"
+        },
+        "comet.diagnostics.undefinedVariable": {
+          "type": "string",
+          "enum": [
+            "error",
+            "warning",
+            "info",
+            "off"
+          ],
+          "default": "warning",
+          "description": "Severity level for undefined variable warnings"
+        },
+        "comet.completion.builtinFunctions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable completion suggestions for built-in functions"
+        }
+      }
+    }
   }
 }
