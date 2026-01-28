@@ -10,10 +10,10 @@ def wait_tick(){
         var condition_fun = schedule_copy[0].condition
         /scoreboard players set #is_wait_end 40planet_num 0
         /$execute store result score #is_wait_end 40planet_num run $(condition_fun)
-        execute(if score "#is_wait_end" 40planet_num matches 1..){
+        execute(if score "#is_wait_end" 40planet_num matches 1..) {
             /$$(function_fun)
         }
-        execute(if score "#is_wait_end" 40planet_num matches ..0){
+        execute(if score "#is_wait_end" 40planet_num matches ..0) {
             append(schedule, schedule_copy[0])
         }
         del(schedule_copy[0])

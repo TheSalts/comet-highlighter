@@ -13,16 +13,13 @@ let documentManager: DocumentManager;
 let diagnosticCollection: vscode.DiagnosticCollection;
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log("[COMET] Comet Highlighter v2 activated");
+    console.log("[COMET] Comet Highlighter v3 activated");
 
-    
     documentManager = new DocumentManager();
 
-    
     diagnosticCollection = vscode.languages.createDiagnosticCollection("comet");
     context.subscriptions.push(diagnosticCollection);
 
-    
     const semanticTokensProvider = new SemanticTokensProvider(documentManager);
     context.subscriptions.push(
         vscode.languages.registerDocumentSemanticTokensProvider(
@@ -32,7 +29,6 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    
     const completionProvider = new CompletionProvider(documentManager);
     context.subscriptions.push(
         vscode.languages.registerCompletionItemProvider(
@@ -46,7 +42,6 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    
     const hoverProvider = new HoverProvider(documentManager);
     context.subscriptions.push(
         vscode.languages.registerHoverProvider(
@@ -55,7 +50,6 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    
     const definitionProvider = new DefinitionProvider(documentManager);
     context.subscriptions.push(
         vscode.languages.registerDefinitionProvider(
@@ -64,7 +58,6 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    
     const documentSymbolProvider = new DocumentSymbolProvider(documentManager);
     context.subscriptions.push(
         vscode.languages.registerDocumentSymbolProvider(
@@ -73,7 +66,6 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    
     let timeout: ReturnType<typeof setTimeout> | undefined;
     context.subscriptions.push(
         vscode.workspace.onDidChangeTextDocument(event => {
@@ -88,7 +80,6 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    
     context.subscriptions.push(
         vscode.workspace.onDidOpenTextDocument(document => {
             if (document.languageId === "comet") {
@@ -97,7 +88,6 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    
     context.subscriptions.push(
         vscode.workspace.onDidCloseTextDocument(document => {
             if (document.languageId === "comet") {
@@ -107,24 +97,20 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    
     vscode.workspace.textDocuments.forEach(document => {
         if (document.languageId === "comet") {
             updateDiagnostics(document);
         }
     });
 
-    
     const config = vscode.workspace.getConfiguration("comet");
     const fallbackVersion = config.get<string>("minecraftVersion", "1.21");
 
-    
     resolveTvVersion(fallbackVersion).then(async version => {
         console.log(
             `[COMET] Initializing Spyglass with MC version: ${version}`
         );
 
-        
         try {
             await vscode.workspace.fs.createDirectory(context.globalStorageUri);
         } catch (error) {
@@ -137,7 +123,7 @@ export function activate(context: vscode.ExtensionContext) {
         const spyglassManager = getSpyglassManager();
         spyglassManager.setCacheDir(context.globalStorageUri.fsPath);
 
-        const mcdocManager = getMcdocManager(); 
+        const mcdocManager = getMcdocManager();
         mcdocManager.setCacheDir(context.globalStorageUri.fsPath);
         mcdocManager.initialize();
 
@@ -167,7 +153,6 @@ async function checkConfigInitialization(context: vscode.ExtensionContext) {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) return;
 
-    
     const configFiles = await vscode.workspace.findFiles("comet.config.json");
     if (configFiles.length > 0) return;
 
@@ -217,9 +202,7 @@ async function resolveTvVersion(fallback: string): Promise<string> {
         if (jsonContent.mcversion) {
             return jsonContent.mcversion;
         }
-    } catch (e) {
-        
-    }
+    } catch (e) {}
     return fallback;
 }
 

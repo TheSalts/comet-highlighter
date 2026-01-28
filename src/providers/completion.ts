@@ -244,8 +244,9 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
             items.push(item);
         }
 
+        const currentScope = this.findScopeAtPosition(parseResult.scope, position);
         const scopeItems = this.getScopeCompletions(
-            parseResult.scope,
+            currentScope,
             position,
             wordRange
         );
@@ -288,6 +289,42 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
             }
         }
         return null;
+    }
+
+    private findScopeAtPosition(
+        scope: any,
+        position: vscode.Position
+    ): any {
+        if (!scope) return null;
+
+        const isPositionInRange = (range: any) => {
+            if (!range) return false;
+            const start = range.start;
+            const end = range.end;
+
+            if (position.line < start.line || position.line > end.line) {
+                return false;
+            }
+
+            if (position.line === start.line && position.character < start.character) {
+                return false;
+            }
+
+            if (position.line === end.line && position.character > end.character) {
+                return false;
+            }
+
+            return true;
+        };
+
+        for (const child of scope.children || []) {
+            if (isPositionInRange(child.range)) {
+                const deeperScope = this.findScopeAtPosition(child, position);
+                return deeperScope || child;
+            }
+        }
+
+        return scope;
     }
 
     private getScopeCompletions(

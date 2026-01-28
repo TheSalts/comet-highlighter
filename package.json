@@ -3,7 +3,7 @@
   "licence": "MIT",
   "displayName": "Comet Highlighter",
   "description": "This is the highlighter of comet(datapack compiler) by 40planet",
-  "version": "1.0.11",
+  "version": "1.1.0",
   "publisher": "alexmonkey05",
   "repository": {
     "type": "git",
