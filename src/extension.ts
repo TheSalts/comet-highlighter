@@ -157,12 +157,12 @@ async function checkConfigInitialization(context: vscode.ExtensionContext) {
     if (configFiles.length > 0) return;
 
     const selection = await vscode.window.showInformationMessage(
-        "comet.config.json not found. Create one?",
-        "Create",
-        "Don't ask again"
+        vscode.l10n.t("message.configNotFound"),
+        vscode.l10n.t("message.create"),
+        vscode.l10n.t("message.dontAskAgain")
     );
 
-    if (selection === "Create") {
+    if (selection === vscode.l10n.t("message.create")) {
         const rootPath = workspaceFolders[0].uri;
         const configUri = vscode.Uri.joinPath(rootPath, "comet.config.json");
 
@@ -182,9 +182,9 @@ async function checkConfigInitialization(context: vscode.ExtensionContext) {
         );
 
         vscode.window.showInformationMessage(
-            `Created comet.config.json with version ${defaultVersion}`
+            vscode.l10n.t("message.configCreated", defaultVersion)
         );
-    } else if (selection === "Don't ask again") {
+    } else if (selection === vscode.l10n.t("message.dontAskAgain")) {
         await context.globalState.update("comet.dontAskConfig", true);
     }
 }

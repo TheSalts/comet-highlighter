@@ -1,9 +1,7 @@
 # Change Log
 
-All notable changes to the "comet-highlighter" extension will be documented in this file.
+## 1.1.0
 
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
+- Added AST based syntax highlighting, autocomplete and lint errors
 
-## [Unreleased]
-
-- Initial release
+- Added Korean support

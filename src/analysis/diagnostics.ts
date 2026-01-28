@@ -35,7 +35,6 @@ export class DiagnosticGenerator {
         this.inLoop = 0;
         this.inFunction = 0;
 
-        
         for (const error of parserErrors) {
             this.diagnostics.push({
                 range: rangeToVscodeRange(error.range),
@@ -45,11 +44,9 @@ export class DiagnosticGenerator {
             });
         }
 
-        
         this.globalScope = this.scopeAnalyzer.analyze(program);
         this.currentScope = this.globalScope;
 
-        
         this.visitProgram(program);
 
         return this.diagnostics.map(d => {
@@ -115,18 +112,16 @@ export class DiagnosticGenerator {
     }
 
     private visitFuncDeclaration(node: AST.FuncDeclaration): void {
-        
         if (node.name.name.length > 0 && /^[A-Z]/.test(node.name.name)) {
             this.addDiagnostic(
                 node.name.range,
-                "Function names starting with uppercase letters may not be recognized by Minecraft",
+                vscode.l10n.t("diagnostic.uppercaseFunction"),
                 vscode.DiagnosticSeverity.Warning
             );
         }
 
         this.inFunction++;
 
-        
         const funcScope = this.findScopeForRange(node.body.range);
         if (funcScope) {
             const previousScope = this.currentScope;
@@ -148,25 +143,18 @@ export class DiagnosticGenerator {
         if (node.consequent.type !== "BlockStatement") {
             this.addDiagnostic(
                 node.consequent.range,
-                "If statement body should be enclosed in braces",
+                vscode.l10n.t("diagnostic.ifNoBraces"),
                 vscode.DiagnosticSeverity.Warning
             );
         }
         this.visitStatement(node.consequent);
 
-        
         if (node.elseIfClauses.length > 0) {
             for (const elseIf of node.elseIfClauses) {
-                this.addDiagnostic(
-                    elseIf.range,
-                    "else if may cause compiler bugs in some versions",
-                    vscode.DiagnosticSeverity.Information
-                );
-
                 if (elseIf.consequent.type !== "BlockStatement") {
                     this.addDiagnostic(
                         elseIf.consequent.range,
-                        "Else if statement body should be enclosed in braces",
+                        vscode.l10n.t("diagnostic.elseIfNoBraces"),
                         vscode.DiagnosticSeverity.Warning
                     );
                 }
@@ -180,7 +168,7 @@ export class DiagnosticGenerator {
             if (node.alternate.type !== "BlockStatement") {
                 this.addDiagnostic(
                     node.alternate.range,
-                    "Else statement body should be enclosed in braces",
+                    vscode.l10n.t("diagnostic.elseNoBraces"),
                     vscode.DiagnosticSeverity.Warning
                 );
             }
@@ -199,7 +187,7 @@ export class DiagnosticGenerator {
         if (this.inFunction === 0) {
             this.addDiagnostic(
                 node.range,
-                "return statement outside of function",
+                vscode.l10n.t("diagnostic.returnOutsideFunction"),
                 vscode.DiagnosticSeverity.Error
             );
         }
@@ -213,21 +201,19 @@ export class DiagnosticGenerator {
         if (this.inLoop === 0) {
             this.addDiagnostic(
                 node.range,
-                "break statement outside of loop",
+                vscode.l10n.t("diagnostic.breakOutsideLoop"),
                 vscode.DiagnosticSeverity.Error
             );
         }
     }
 
-    private visitImportStatement(node: AST.ImportStatement): void {
-        
-    }
+    private visitImportStatement(node: AST.ImportStatement): void {}
 
     private visitExecuteStatement(node: AST.ExecuteStatement): void {
         const spyglass = getSpyglassManager();
         if (spyglass.isInitialized()) {
             const baseCommand = "execute " + node.subcommands;
-            
+
             const errors = spyglass.validateCommand(baseCommand, {
                 ignoreIncomplete: true,
             });
@@ -305,7 +291,6 @@ export class DiagnosticGenerator {
     ): void {}
 
     private visitBlockStatement(node: AST.BlockStatement): void {
-        
         const blockScope = this.findScopeForRange(node.range);
         if (blockScope) {
             const previousScope = this.currentScope;
@@ -357,24 +342,21 @@ export class DiagnosticGenerator {
                 this.visitExpression(node.expression);
                 break;
             default:
-                
                 break;
         }
     }
 
     private visitIdentifier(node: AST.Identifier): void {
-        
         if (node.name === "__namespace__" || node.name === "__main__") {
             return;
         }
 
-        
         if (this.currentScope) {
             const symbol = this.currentScope.resolve(node.name);
             if (!symbol) {
                 this.addDiagnostic(
                     node.range,
-                    `Undefined identifier: ${node.name}`,
+                    vscode.l10n.t("diagnostic.undefinedIdentifier", node.name),
                     vscode.DiagnosticSeverity.Warning
                 );
             }
@@ -382,18 +364,19 @@ export class DiagnosticGenerator {
     }
 
     private visitCallExpression(node: AST.CallExpression): void {
-        
         if (node.callee.type === "Identifier") {
             if (this.currentScope) {
                 const symbol = this.currentScope.resolve(node.callee.name);
                 if (!symbol) {
                     this.addDiagnostic(
                         node.callee.range,
-                        `Undefined function: ${node.callee.name}`,
+                        vscode.l10n.t(
+                            "diagnostic.undefinedFunction",
+                            node.callee.name
+                        ),
                         vscode.DiagnosticSeverity.Warning
                     );
                 } else if (symbol.kind === "builtin" && symbol.params) {
-                    
                     const minParams = symbol.params.filter(
                         p => !p.name.startsWith("...")
                     ).length;
@@ -404,13 +387,21 @@ export class DiagnosticGenerator {
                     if (!hasVariadic && node.arguments.length !== minParams) {
                         this.addDiagnostic(
                             node.range,
-                            `Expected ${minParams} arguments, got ${node.arguments.length}`,
+                            vscode.l10n.t(
+                                "diagnostic.expectedArguments",
+                                minParams,
+                                node.arguments.length
+                            ),
                             vscode.DiagnosticSeverity.Warning
                         );
                     } else if (node.arguments.length < minParams) {
                         this.addDiagnostic(
                             node.range,
-                            `Expected at least ${minParams} arguments, got ${node.arguments.length}`,
+                            vscode.l10n.t(
+                                "diagnostic.expectedAtLeast",
+                                minParams,
+                                node.arguments.length
+                            ),
                             vscode.DiagnosticSeverity.Warning
                         );
                     }
@@ -418,7 +409,6 @@ export class DiagnosticGenerator {
             }
         }
 
-        
         for (const arg of node.arguments) {
             this.visitExpression(arg);
         }
@@ -428,12 +418,10 @@ export class DiagnosticGenerator {
         if (!this.globalScope) return null;
 
         const findScope = (scope: Scope): Scope | null => {
-            
             if (
                 range.start.line >= scope.range.start.line &&
                 range.end.line <= scope.range.end.line
             ) {
-                
                 for (const child of scope.children) {
                     const found = findScope(child);
                     if (found) return found;

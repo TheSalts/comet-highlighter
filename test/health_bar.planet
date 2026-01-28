@@ -1,4 +1,3 @@
-
 /scoreboard objectives add 40planet_health dummy
 /scoreboard objectives add 40planet_pre_health dummy
 /scoreboard objectives add 40planet_max_health dummy

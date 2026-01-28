@@ -1,8 +1,8 @@
 {
   "name": "comet-highlighter",
   "licence": "MIT",
-  "displayName": "Comet Highlighter",
-  "description": "This is the highlighter of comet(datapack compiler) by 40planet",
+  "displayName": "%extension.displayName%",
+  "description": "%extension.description%",
   "version": "1.1.0",
   "publisher": "alexmonkey05",
   "repository": {
@@ -12,6 +12,7 @@
   "engines": {
     "vscode": "^1.91.0"
   },
+  "l10n": "./l10n",
   "categories": [
     "Programming Languages"
   ],
@@ -85,22 +86,22 @@
       }
     ],
     "configuration": {
-      "title": "Comet",
+      "title": "%config.title%",
       "properties": {
         "comet.minecraftVersion": {
           "type": "string",
           "default": "1.21",
-          "description": "Minecraft version for command validation and completion"
+          "description": "%config.minecraftVersion%"
         },
         "comet.defaultMcVersion": {
           "type": "string",
           "default": "1.21.11",
-          "description": "Default Minecraft version for new comet.config.json files"
+          "description": "%config.defaultMcVersion%"
         },
         "comet.diagnostics.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable/disable diagnostics"
+          "description": "%config.diagnostics.enabled%"
         },
         "comet.diagnostics.undefinedVariable": {
           "type": "string",
@@ -111,12 +112,12 @@
             "off"
           ],
           "default": "warning",
-          "description": "Severity level for undefined variable warnings"
+          "description": "%config.diagnostics.undefinedVariable%"
         },
         "comet.completion.builtinFunctions": {
           "type": "boolean",
           "default": true,
-          "description": "Enable completion suggestions for built-in functions"
+          "description": "%config.completion.builtinFunctions%"
         }
       }
     }

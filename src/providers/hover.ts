@@ -21,7 +21,6 @@ export class HoverProvider implements vscode.HoverProvider {
         const parseResult = this.documentManager.parse(document);
         const pos = vscodePositionToPosition(position);
 
-        
         const identifier = this.findIdentifierAtPosition(
             parseResult.program,
             pos
@@ -30,13 +29,11 @@ export class HoverProvider implements vscode.HoverProvider {
             return null;
         }
 
-        
         const symbol = parseResult.scope.resolve(identifier.name);
         if (!symbol) {
             return null;
         }
 
-        
         const markdown = new vscode.MarkdownString();
         markdown.isTrusted = true;
 
@@ -64,23 +61,7 @@ export class HoverProvider implements vscode.HoverProvider {
 
             case "variable":
                 let typeStr = "any";
-                
-                
-                
-                
-                
-                
 
-                
-                
-
-                
-                
-
-                
-                
-
-                
                 const declNode = this.findDeclarationNode(
                     parseResult.program,
                     symbol.declarationRange
@@ -97,7 +78,9 @@ export class HoverProvider implements vscode.HoverProvider {
                     "comet"
                 );
                 const varLine = symbol.declarationRange.start.line + 1;
-                markdown.appendMarkdown(`\n\nDeclared at line ${varLine}`);
+                markdown.appendMarkdown(
+                    `\n\n${vscode.l10n.t("hover.declaredAtLine", varLine)}`
+                );
                 break;
 
             case "parameter":
@@ -106,7 +89,9 @@ export class HoverProvider implements vscode.HoverProvider {
 
             case "import":
                 markdown.appendCodeblock(`import ${symbol.name}`, "comet");
-                markdown.appendMarkdown(`\n\nImported module`);
+                markdown.appendMarkdown(
+                    `\n\n${vscode.l10n.t("hover.importedModule")}`
+                );
                 break;
 
             default:
@@ -125,14 +110,12 @@ export class HoverProvider implements vscode.HoverProvider {
         const visitNode = (node: any): void => {
             if (!node || typeof node !== "object") return;
 
-            
             if (node.type === "Identifier" && node.range) {
                 if (this.rangeContainsPosition(node.range, pos)) {
                     found = node;
                 }
             }
 
-            
             for (const key in node) {
                 if (key === "range" || key === "type") continue;
                 const value = node[key];
