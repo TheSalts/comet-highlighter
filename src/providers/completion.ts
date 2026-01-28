@@ -26,6 +26,8 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
             new vscode.Range(0, 0, position.line, position.character)
         );
 
+        const wordRange = document.getWordRangeAtPosition(position);
+
         const lexer = new Lexer(textBeforeCursor);
         const tokens = lexer.tokenize();
 
@@ -42,9 +44,11 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
         if (match) {
             const commandText = match[2];
             const spyglassManager = getSpyglassManager();
+            const availableTags = this.collectTags(parseResult.scope);
             const mcCompletions = spyglassManager.getCommandCompletions(
                 commandText,
-                commandText.length
+                commandText.length,
+                availableTags
             );
 
             return mcCompletions.map(comp => {
@@ -53,6 +57,7 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
                     vscode.CompletionItemKind.Function
                 );
                 item.detail = comp.detail || "Minecraft command";
+                if (wordRange) item.range = wordRange;
                 return item;
             });
         }
@@ -68,15 +73,17 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
             items.push(
                 this.createSnippet(
                     "tick",
-                    "def tick(){\n\t$0\n}",
-                    "Special function: runs every tick"
+                    "tick(){\n\t$0\n}",
+                    "Special function: runs every tick",
+                    wordRange
                 )
             );
             items.push(
                 this.createSnippet(
                     "load",
-                    "def load(){\n\t$0\n}",
-                    "Special function: runs on datapack load"
+                    "load(){\n\t$0\n}",
+                    "Special function: runs on datapack load",
+                    wordRange
                 )
             );
             return items;
@@ -98,6 +105,7 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
                             vscode.CompletionItemKind.Module
                         );
                         item.detail = name;
+                        if (wordRange) item.range = wordRange;
                         return item;
                     });
                 return planetFiles;
@@ -121,9 +129,11 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
             const command = "execute " + executeContext.content;
             const relativePos = 8 + executeContext.content.length;
 
+            const availableTags = this.collectTags(parseResult.scope);
             const mcCompletions = spyglassManager.getCommandCompletions(
                 command,
-                relativePos
+                relativePos,
+                availableTags
             );
             return mcCompletions.map(comp => {
                 const item = new vscode.CompletionItem(
@@ -131,6 +141,7 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
                     vscode.CompletionItemKind.Keyword
                 );
                 item.detail = comp.detail || "Execute subcommand";
+                if (wordRange) item.range = wordRange;
                 return item;
             });
         }
@@ -139,45 +150,67 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
             this.createKeyword(
                 "var",
                 "var ${1:name} = $0",
-                "Variable declaration"
+                "Variable declaration",
+                wordRange
             )
         );
         items.push(
             this.createKeyword(
                 "def",
                 "def ${1:name}(${2}){\n\t$0\n}",
-                "Function declaration"
+                "Function declaration",
+                wordRange
             )
         );
         items.push(
             this.createKeyword(
                 "if",
                 "if(${1:condition}){\n\t$0\n}",
-                "If statement"
+                "If statement",
+                wordRange
             )
         );
         items.push(
-            this.createKeyword("else", "else {\n\t$0\n}", "Else clause")
+            this.createKeyword(
+                "else",
+                "else {\n\t$0\n}",
+                "Else clause",
+                wordRange
+            )
         );
         items.push(
             this.createKeyword(
                 "while",
                 "while(${1:condition}){\n\t$0\n}",
-                "While loop"
+                "While loop",
+                wordRange
             )
         );
         items.push(
-            this.createKeyword("return", "return $0", "Return statement")
+            this.createKeyword(
+                "return",
+                "return $0",
+                "Return statement",
+                wordRange
+            )
         );
-        items.push(this.createKeyword("break", "break", "Break statement"));
         items.push(
-            this.createKeyword("import", "import ${1:module}", "Import module")
+            this.createKeyword("break", "break", "Break statement", wordRange)
+        );
+        items.push(
+            this.createKeyword(
+                "import",
+                "import ${1:module}",
+                "Import module",
+                wordRange
+            )
         );
         items.push(
             this.createKeyword(
                 "execute",
                 "execute(${1:subcommands}){\n\t$0\n}",
-                "Execute statement"
+                "Execute statement",
+                wordRange
             )
         );
 
@@ -187,6 +220,7 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
         );
         cmdItem.detail = "Minecraft command";
         cmdItem.insertText = "/$0";
+        if (wordRange) cmdItem.range = wordRange;
         items.push(cmdItem);
 
         for (const builtin of BUILTIN_FUNCTIONS) {
@@ -205,21 +239,27 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
             item.insertText = new vscode.SnippetString(
                 `${builtin.name}(${paramSnippets})$0`
             );
+            if (wordRange) item.range = wordRange;
 
             items.push(item);
         }
 
         const scopeItems = this.getScopeCompletions(
             parseResult.scope,
-            position
+            position,
+            wordRange
         );
         items.push(...scopeItems);
 
-        items.push(this.createSpecial("__namespace__", "Current namespace"));
-        items.push(this.createSpecial("__main__", "Main module check"));
+        items.push(
+            this.createSpecial("__namespace__", "Current namespace", wordRange)
+        );
+        items.push(
+            this.createSpecial("__main__", "Main module check", wordRange)
+        );
 
-        items.push(this.createConstant("true", "Boolean true"));
-        items.push(this.createConstant("false", "Boolean false"));
+        items.push(this.createConstant("true", "Boolean true", wordRange));
+        items.push(this.createConstant("false", "Boolean false", wordRange));
 
         return items;
     }
@@ -231,38 +271,19 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
         for (let i = text.length - 1; i >= 0; i--) {
             const char = text[i];
 
-            // Handle parentheses for execute(...)
             if (char === ")") parenDepth++;
             else if (char === "(") {
                 if (parenDepth > 0) parenDepth--;
                 else {
-                    // Found the opening parenthesis of execute
-                    // Check if it is preceded by "execute"
                     const preceding = text.substring(0, i).trim();
                     if (preceding.endsWith("execute")) {
-                        // We are strictly inside the execute() parentheses
-                        // But we must check if we are strangely deep in a brace block
-                        // If braceDepth > 0, it means we saw more '}' than '{' scanning backwards,
-                        // effectively we are 'outside' blocks? No.
-                        // Scanning backwards:
-                        // "}" increments braceDepth. "{" decrements.
-                        // If we are *inside* a block, we would encounter "{" first (scanning back), so braceDepth becomes negative.
-                        // If braceDepth < 0, we are inside a block.
-
-                        if (braceDepth !== 0) return null; // Unbalanced braces inside context
-
+                        if (braceDepth !== 0) return null;
                         return { content: text.substring(i + 1) };
                     }
                 }
-            }
-
-            // Handle braces for inline functions { ... }
-            else if (char === "}") braceDepth++;
+            } else if (char === "}") braceDepth++;
             else if (char === "{") {
                 braceDepth--;
-                // If braceDepth goes negative, we are inside a brace block (scanning backwards)
-                // e.g. "execute(if function { |" -> char '{' makes depth -1.
-                // We should stop and return null so standard completions work.
                 if (braceDepth < 0) return null;
             }
         }
@@ -271,7 +292,8 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
 
     private getScopeCompletions(
         scope: any,
-        position: vscode.Position
+        position: vscode.Position,
+        range?: vscode.Range
     ): vscode.CompletionItem[] {
         const items: vscode.CompletionItem[] = [];
 
@@ -329,6 +351,8 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
                     );
                 }
 
+                if (range) item.range = range;
+
                 items.push(item);
             }
 
@@ -342,6 +366,32 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
         return items;
     }
 
+    private collectTags(scope: any): string[] {
+        const tags: string[] = [];
+        const checkedScopes = new Set<any>();
+
+        const visit = (currentScope: any) => {
+            if (!currentScope || checkedScopes.has(currentScope)) return;
+            checkedScopes.add(currentScope);
+
+            if (currentScope.symbols) {
+                
+                for (const [name, symbol] of currentScope.symbols) {
+                    if (symbol.kind === "tag") {
+                        tags.push(name);
+                    }
+                }
+            }
+
+            if (currentScope.parent) {
+                visit(currentScope.parent);
+            }
+        };
+
+        visit(scope);
+        return Array.from(new Set(tags));
+    }
+
     private formatParams(params: any[]): string {
         return params
             .map(p => (p.type ? `${p.name}: ${p.type}` : p.name))
@@ -351,7 +401,8 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
     private createKeyword(
         label: string,
         snippet: string,
-        description: string
+        description: string,
+        range?: vscode.Range
     ): vscode.CompletionItem {
         const item = new vscode.CompletionItem(
             label,
@@ -359,13 +410,15 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
         );
         item.insertText = new vscode.SnippetString(snippet);
         item.detail = description;
+        if (range) item.range = range;
         return item;
     }
 
     private createSnippet(
         label: string,
         snippet: string,
-        description: string
+        description: string,
+        range?: vscode.Range
     ): vscode.CompletionItem {
         const item = new vscode.CompletionItem(
             label,
@@ -373,30 +426,35 @@ export class CompletionProvider implements vscode.CompletionItemProvider {
         );
         item.insertText = new vscode.SnippetString(snippet);
         item.detail = description;
+        if (range) item.range = range;
         return item;
     }
 
     private createSpecial(
         label: string,
-        description: string
+        description: string,
+        range?: vscode.Range
     ): vscode.CompletionItem {
         const item = new vscode.CompletionItem(
             label,
             vscode.CompletionItemKind.Constant
         );
         item.detail = description;
+        if (range) item.range = range;
         return item;
     }
 
     private createConstant(
         label: string,
-        description: string
+        description: string,
+        range?: vscode.Range
     ): vscode.CompletionItem {
         const item = new vscode.CompletionItem(
             label,
             vscode.CompletionItemKind.Constant
         );
         item.detail = description;
+        if (range) item.range = range;
         return item;
     }
 }

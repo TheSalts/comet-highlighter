@@ -32,13 +32,13 @@ export class Lexer {
         const startLine = this.line;
         const startColumn = this.column;
 
-        // Skip whitespace (except newlines)
+        
         if (this.isWhitespace(this.peek()) && this.peek() !== "\n") {
             this.advance();
             return;
         }
 
-        // Newline
+        
         if (this.peek() === "\n") {
             this.addToken(
                 TokenType.Newline,
@@ -52,40 +52,45 @@ export class Lexer {
             return;
         }
 
-        // Check if we're at the start of a line for command detection
+        
         const isLineStart = this.column === 0 || this.isLineStart();
 
-        // Command line: /... or /$...
+        
         if (isLineStart && this.peek() === "/") {
+            
+            if (this.peekNext() === "#") {
+                this.scanComment(); 
+                return;
+            }
             this.scanCommandLine();
             return;
         }
 
-        // Comment: # ...
+        
         if (this.peek() === "#") {
             this.scanComment();
             return;
         }
 
-        // String literal: "..."
+        
         if (this.peek() === '"') {
             this.scanString();
             return;
         }
 
-        // Numbers
+        
         if (this.isDigit(this.peek())) {
             this.scanNumber();
             return;
         }
 
-        // Identifiers and keywords
+        
         if (this.isAlpha(this.peek())) {
             this.scanIdentifier();
             return;
         }
 
-        // Two-character operators
+        
         const ch = this.peek();
         const next = this.peekNext();
 
@@ -133,7 +138,7 @@ export class Lexer {
             return;
         }
 
-        // Single-character tokens
+        
         const char = this.advance();
         switch (char) {
             case "+":
@@ -270,7 +275,7 @@ export class Lexer {
                 );
                 break;
             default:
-                // Unknown character - skip it
+                
                 break;
         }
     }
@@ -279,20 +284,17 @@ export class Lexer {
         const startLine = this.line;
         const startColumn = this.column;
 
-        this.advance(); // consume '/'
+        this.advance(); 
 
-        // Check for macro command: /$
+        
         const isMacro = this.peek() === "$";
         if (isMacro) {
-            this.advance(); // consume '$'
+            this.advance(); 
         }
 
-        // Read until end of line
+        
         const start = this.current;
         while (!this.isAtEnd() && this.peek() !== "\n") {
-            if (this.peek() === "#") {
-                break;
-            }
             this.advance();
         }
 
@@ -312,9 +314,9 @@ export class Lexer {
         const startLine = this.line;
         const startColumn = this.column;
 
-        this.advance(); // consume '#'
+        this.advance(); 
 
-        // Read until end of line
+        
         const start = this.current;
         while (!this.isAtEnd() && this.peek() !== "\n") {
             this.advance();
@@ -332,15 +334,15 @@ export class Lexer {
         const startLine = this.line;
         const startColumn = this.column;
 
-        this.advance(); // consume opening "
+        this.advance(); 
 
         let value = "";
         while (!this.isAtEnd() && this.peek() !== '"') {
             if (this.peek() === "\\") {
-                this.advance(); // consume \
+                this.advance(); 
                 if (!this.isAtEnd()) {
                     const escaped = this.advance();
-                    // Handle escape sequences
+                    
                     switch (escaped) {
                         case "n":
                             value += "\n";
@@ -373,7 +375,7 @@ export class Lexer {
         }
 
         if (!this.isAtEnd() && this.peek() === '"') {
-            this.advance(); // consume closing "
+            this.advance(); 
         }
 
         this.addToken(
@@ -388,12 +390,12 @@ export class Lexer {
         const startColumn = this.column;
         const start = this.current;
 
-        // Read integer part
+        
         while (this.isDigit(this.peek())) {
             this.advance();
         }
 
-        // Check for float with 'f' suffix
+        
         if (this.peek() === "f") {
             this.advance();
             const value = this.source.substring(start, this.current);
@@ -405,14 +407,14 @@ export class Lexer {
             return;
         }
 
-        // Check for decimal point (double)
+        
         if (this.peek() === "." && this.isDigit(this.peekNext())) {
-            this.advance(); // consume '.'
+            this.advance(); 
             while (this.isDigit(this.peek())) {
                 this.advance();
             }
 
-            // Check if there's an 'f' suffix after decimal
+            
             if (this.peek() === "f") {
                 this.advance();
                 const value = this.source.substring(start, this.current);
@@ -433,7 +435,7 @@ export class Lexer {
             return;
         }
 
-        // Integer
+        
         const value = this.source.substring(start, this.current);
         this.addToken(
             TokenType.IntLiteral,
@@ -453,7 +455,7 @@ export class Lexer {
 
         const value = this.source.substring(start, this.current);
 
-        // Check if it's a keyword
+        
         const keywordType = KEYWORDS.get(value);
         if (keywordType !== undefined) {
             this.addToken(
@@ -471,7 +473,7 @@ export class Lexer {
     }
 
     private isLineStart(): boolean {
-        // Check if everything before current position on this line is whitespace
+        
         for (let i = this.lineStart; i < this.current; i++) {
             const ch = this.source[i];
             if (ch !== " " && ch !== "\t") {

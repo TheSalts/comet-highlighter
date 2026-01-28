@@ -27,10 +27,10 @@
       "include": "#operators"
     },
     {
-      "include": "#commands"
+      "include": "#macros"
     },
     {
-      "include": "#macros"
+      "include": "#commands"
     },
     {
       "include": "#variables"
@@ -42,6 +42,10 @@
         {
           "name": "comment.line.number-sign.comet",
           "match": "#.*$"
+        },
+        {
+          "name": "comment.line.slash-number-sign.comet",
+          "match": "/#.*$"
         }
       ]
     },
@@ -143,11 +147,190 @@
     "commands": {
       "patterns": [
         {
-          "name": "meta.command.comet",
-          "match": "^\\s*/(?![\\*$]).*$",
+          "name": "meta.command.minecraft.comet",
+          "begin": "^\\s*(/)(execute|scoreboard|give|summon|kill|tp|teleport|data|setblock|fill|clone|effect|enchant|experience|xp|gamemode|gamerule|clear|playsound|stopsound|particle|function|advancement|recipe|loot|team|tag|say|tell|msg|w|tellraw|title|bossbar|weather|time|setworldspawn|spawnpoint|worldborder|difficulty|locate|forceload|schedule|spreadplayers|jfr)\\b",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.definition.command.comet"
+            },
+            "2": {
+              "name": "keyword.control.command.name.comet"
+            }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "include": "#minecraft-selectors"
+            },
+            {
+              "include": "#minecraft-subcommands"
+            },
+            {
+              "include": "#minecraft-nbt"
+            },
+            {
+              "include": "#minecraft-resource-location"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "include": "#strings"
+            }
+          ]
+        },
+        {
+          "name": "meta.command.generic.comet",
+          "begin": "^\\s*(/)",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.definition.command.comet"
+            }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "match": "\\b[a-z_]+\\b",
+              "name": "entity.name.function.command.comet"
+            },
+            {
+              "include": "#minecraft-selectors"
+            },
+            {
+              "include": "#minecraft-nbt"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "include": "#strings"
+            }
+          ]
+        }
+      ]
+    },
+    "minecraft-selectors": {
+      "patterns": [
+        {
+          "name": "meta.selector.minecraft.comet",
+          "begin": "(@[aeprs])\\[",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.other.selector.comet"
+            }
+          },
+          "end": "\\]",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.selector.end.comet"
+            }
+          },
+          "patterns": [
+            {
+              "match": "\\b(type|tag|name|distance|level|x|y|z|dx|dy|dz|gamemode|scores|advancements|nbt|limit|sort|x_rotation|y_rotation|team)\\s*(=)",
+              "captures": {
+                "1": {
+                  "name": "variable.parameter.selector.comet"
+                },
+                "2": {
+                  "name": "keyword.operator.assignment.comet"
+                }
+              }
+            },
+            {
+              "match": "\\.\\.|-?\\d+(\\.\\d+)?",
+              "name": "constant.numeric.selector.comet"
+            },
+            {
+              "match": "!",
+              "name": "keyword.operator.logical.comet"
+            },
+            {
+              "include": "#minecraft-nbt"
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "match": "[a-zA-Z_][a-zA-Z0-9_]*:[a-zA-Z0-9_/.-]+",
+              "name": "entity.name.type.resource-location.comet"
+            },
+            {
+              "match": ",",
+              "name": "punctuation.separator.comet"
+            }
+          ]
+        },
+        {
+          "match": "@[aeprs]\\b",
+          "name": "keyword.other.selector.comet"
+        }
+      ]
+    },
+    "minecraft-subcommands": {
+      "patterns": [
+        {
+          "match": "\\b(run|as|at|if|unless|in|positioned|rotated|anchored|align|store|result|success|objectives|players|score|matches|add|set|reset|remove|list|get|operation|enable|modify|block|entity|storage|merge|append|insert|prepend|from|string|value)\\b",
+          "name": "support.function.subcommand.comet"
+        }
+      ]
+    },
+    "minecraft-nbt": {
+      "patterns": [
+        {
+          "name": "meta.structure.nbt.comet",
+          "begin": "\\{",
+          "end": "\\}",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.definition.nbt.begin.comet"
+            }
+          },
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.definition.nbt.end.comet"
+            }
+          },
+          "patterns": [
+            {
+              "match": "([a-zA-Z_][a-zA-Z0-9_]*)\\s*(:)",
+              "captures": {
+                "1": {
+                  "name": "variable.other.property.nbt.comet"
+                },
+                "2": {
+                  "name": "punctuation.separator.key-value.comet"
+                }
+              }
+            },
+            {
+              "include": "#minecraft-nbt"
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "match": ",",
+              "name": "punctuation.separator.comet"
+            },
+            {
+              "match": "\\b(true|false)\\b",
+              "name": "constant.language.boolean.comet"
+            }
+          ]
+        }
+      ]
+    },
+    "minecraft-resource-location": {
+      "patterns": [
+        {
+          "match": "#?([a-z0-9_.-]+):([a-z0-9_/.-]+)",
           "captures": {
             "0": {
-              "name": "string.unquoted.command.comet"
+              "name": "entity.name.type.resource-location.comet"
             }
           }
         }
@@ -157,13 +340,52 @@
       "patterns": [
         {
           "name": "meta.macro-command.comet",
-          "match": "^\\s*/\\$.*$",
-          "captures": {
-            "0": {
-              "name": "string.unquoted.macro.comet"
+          "begin": "^\\s*(/\\$)\\s*([a-zA-Z0-9_]+)?",
+          "end": "$",
+          "beginCaptures": {
+            "1": {
+              "name": "punctuation.definition.macro.comet"
+            },
+            "2": {
+              "name": "entity.name.function.command.comet"
             }
-          }
+          },
+          "patterns": [
+            {
+              "include": "#macro-variables"
+            },
+            {
+              "include": "#minecraft-selectors"
+            },
+            {
+              "include": "#minecraft-subcommands"
+            },
+            {
+              "include": "#minecraft-nbt"
+            },
+            {
+              "include": "#minecraft-resource-location"
+            },
+            {
+              "include": "#numbers"
+            },
+            {
+              "include": "#strings"
+            },
+            {
+              "match": "[a-zA-Z0-9_]+",
+              "name": "variable.other.comet"
+            }
+          ]
         },
+        {
+          "name": "variable.other.macro.comet",
+          "match": "\\$\\([a-zA-Z_][a-zA-Z0-9_]*\\)"
+        }
+      ]
+    },
+    "macro-variables": {
+      "patterns": [
         {
           "name": "variable.other.macro.comet",
           "match": "\\$\\([a-zA-Z_][a-zA-Z0-9_]*\\)"

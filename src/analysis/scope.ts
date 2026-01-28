@@ -18,8 +18,8 @@ export interface Symbol {
     params?: ParamInfo[];
     returnType?: string;
     documentation?: string;
-    // For scores/tags/storage
-    scope?: string; // e.g. objective name or storage namespace
+    
+    scope?: string; 
 }
 
 export interface ParamInfo {
@@ -61,7 +61,7 @@ export class Scope {
     }
 }
 
-// Built-in functions
+
 export const BUILTIN_FUNCTIONS: Symbol[] = [
     {
         name: "print",
@@ -308,7 +308,7 @@ export class ScopeAnalyzer {
         });
         this.currentScope = this.globalScope;
 
-        // Register built-in functions
+        
         for (const builtin of BUILTIN_FUNCTIONS) {
             this.globalScope.define(builtin);
         }
@@ -361,7 +361,7 @@ export class ScopeAnalyzer {
                 this.visitBlockStatement(node);
                 break;
             default:
-                // Other statement types don't need special handling
+                
                 break;
         }
     }
@@ -379,7 +379,7 @@ export class ScopeAnalyzer {
     }
 
     private visitFuncDeclaration(node: AST.FuncDeclaration): void {
-        // Define function in current scope
+        
         const params: ParamInfo[] = node.params.map(p => ({
             name: p.name.name,
         }));
@@ -391,12 +391,12 @@ export class ScopeAnalyzer {
             params,
         });
 
-        // Create new scope for function body
+        
         const funcScope = new Scope(node.body.range, this.currentScope);
         const previousScope = this.currentScope;
         this.currentScope = funcScope;
 
-        // Define parameters in function scope
+        
         for (const param of node.params) {
             funcScope.define({
                 name: param.name.name,
@@ -405,7 +405,7 @@ export class ScopeAnalyzer {
             });
         }
 
-        // Visit function body
+        
         for (const stmt of node.body.body) {
             this.visitStatement(stmt);
         }
@@ -441,7 +441,7 @@ export class ScopeAnalyzer {
     }
 
     private visitExecuteStatement(node: AST.ExecuteStatement): void {
-        // Create new scope for execute body
+        
         const execScope = new Scope(node.body.range, this.currentScope);
         const previousScope = this.currentScope;
         this.currentScope = execScope;
@@ -454,7 +454,7 @@ export class ScopeAnalyzer {
     }
 
     private visitBlockStatement(node: AST.BlockStatement): void {
-        // Create new scope for block
+        
         const blockScope = new Scope(node.range, this.currentScope);
         const previousScope = this.currentScope;
         this.currentScope = blockScope;
@@ -479,7 +479,7 @@ export class ScopeAnalyzer {
                 this.visitExpression(node.value);
                 break;
             case "CallExpression":
-                // Check if it's a tracking function
+                
                 if (node.callee.type === "Identifier") {
                     this.handleTrackingFunction(
                         node.callee.name,
@@ -506,7 +506,7 @@ export class ScopeAnalyzer {
                 this.visitExpression(node.expression);
                 break;
             default:
-                // Literals and identifiers don't need special handling
+                
                 break;
         }
     }
@@ -524,7 +524,7 @@ export class ScopeAnalyzer {
             const target = getArgValue(args[0]);
             const objective = getArgValue(args[1]);
             if (target && objective) {
-                // We track scores as: objective (scope) -> target (name)
+                
                 this.globalScope.define({
                     name: target,
                     kind: "score",
@@ -545,7 +545,7 @@ export class ScopeAnalyzer {
                 }
             }
         }
-        // TODO: Tag tracking if there's a generic tag function?
-        // Usually tags are managed via commands, which we don't fully parse for tracking yet (maybe via execute?)
+        
+        
     }
 }

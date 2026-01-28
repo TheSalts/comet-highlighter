@@ -1,9 +1,9 @@
 import { Range } from "../utils/position";
 export { Range };
 
-// ============================================================================
-// Program (Top-level)
-// ============================================================================
+
+
+
 
 export interface Program {
     type: "Program";
@@ -11,9 +11,9 @@ export interface Program {
     range: Range;
 }
 
-// ============================================================================
-// Statements
-// ============================================================================
+
+
+
 
 export type Statement =
     | VarDeclaration
@@ -132,9 +132,9 @@ export interface ErrorNode {
     range: Range;
 }
 
-// ============================================================================
-// Expressions
-// ============================================================================
+
+
+
 
 export type Expression =
     | IntLiteral
@@ -251,7 +251,7 @@ export interface MemberExpression {
     type: "MemberExpression";
     object: Expression;
     property: Expression;
-    computed: boolean; // true: a[0], false: a.b
+    computed: boolean; 
     range: Range;
 }
 

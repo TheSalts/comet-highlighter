@@ -1,7 +1,12 @@
 import * as vscode from "vscode";
 import * as AST from "../parser/ast";
 import { Scope, ScopeAnalyzer } from "./scope";
+import { ParseError } from "../parser/parser";
 import { rangeToVscodeRange, Range } from "../utils/position";
+import {
+    getSpyglassManager,
+    CommandValidationError,
+} from "../minecraft/spyglass";
 
 export interface Diagnostic {
     range: vscode.Range;
@@ -24,27 +29,27 @@ export class DiagnosticGenerator {
 
     generate(
         program: AST.Program,
-        parserErrors: string[]
+        parserErrors: ParseError[]
     ): vscode.Diagnostic[] {
         this.diagnostics = [];
         this.inLoop = 0;
         this.inFunction = 0;
 
-        // Add parser errors
+        
         for (const error of parserErrors) {
             this.diagnostics.push({
-                range: new vscode.Range(0, 0, 0, 0),
-                message: error,
+                range: rangeToVscodeRange(error.range),
+                message: error.message,
                 severity: vscode.DiagnosticSeverity.Error,
                 source: "comet",
             });
         }
 
-        // Perform scope analysis
+        
         this.globalScope = this.scopeAnalyzer.analyze(program);
         this.currentScope = this.globalScope;
 
-        // Visit AST to generate semantic diagnostics
+        
         this.visitProgram(program);
 
         return this.diagnostics.map(d => {
@@ -86,6 +91,12 @@ export class DiagnosticGenerator {
             case "ExecuteStatement":
                 this.visitExecuteStatement(node);
                 break;
+            case "CommandStatement":
+                this.visitCommandStatement(node);
+                break;
+            case "MacroCommandStatement":
+                this.visitMacroCommandStatement(node);
+                break;
             case "ExpressionStatement":
                 this.visitExpression(node.expression);
                 break;
@@ -104,7 +115,7 @@ export class DiagnosticGenerator {
     }
 
     private visitFuncDeclaration(node: AST.FuncDeclaration): void {
-        // Check if function name starts with uppercase
+        
         if (node.name.name.length > 0 && /^[A-Z]/.test(node.name.name)) {
             this.addDiagnostic(
                 node.name.range,
@@ -115,7 +126,7 @@ export class DiagnosticGenerator {
 
         this.inFunction++;
 
-        // Enter function scope
+        
         const funcScope = this.findScopeForRange(node.body.range);
         if (funcScope) {
             const previousScope = this.currentScope;
@@ -143,7 +154,7 @@ export class DiagnosticGenerator {
         }
         this.visitStatement(node.consequent);
 
-        // Check for else if usage and add information hint
+        
         if (node.elseIfClauses.length > 0) {
             for (const elseIf of node.elseIfClauses) {
                 this.addDiagnostic(
@@ -209,11 +220,43 @@ export class DiagnosticGenerator {
     }
 
     private visitImportStatement(node: AST.ImportStatement): void {
-        // Could add checks for file existence here
+        
     }
 
     private visitExecuteStatement(node: AST.ExecuteStatement): void {
-        // Enter execute scope
+        const spyglass = getSpyglassManager();
+        if (spyglass.isInitialized()) {
+            const baseCommand = "execute " + node.subcommands;
+            
+            const errors = spyglass.validateCommand(baseCommand, {
+                ignoreIncomplete: true,
+            });
+
+            for (const error of errors) {
+                const adjustedStart = error.start > 8 ? error.start - 8 : 0;
+                const startLine = node.subcommandRange.start.line;
+                const startCol =
+                    node.subcommandRange.start.character + adjustedStart;
+
+                this.diagnostics.push({
+                    range: new vscode.Range(
+                        startLine,
+                        startCol,
+                        startLine,
+                        startCol + error.length
+                    ),
+                    message: error.message,
+                    severity:
+                        error.severity === "error"
+                            ? vscode.DiagnosticSeverity.Error
+                            : error.severity === "warning"
+                              ? vscode.DiagnosticSeverity.Warning
+                              : vscode.DiagnosticSeverity.Information,
+                    source: "minecraft",
+                });
+            }
+        }
+
         const execScope = this.findScopeForRange(node.body.range);
         if (execScope) {
             const previousScope = this.currentScope;
@@ -227,8 +270,42 @@ export class DiagnosticGenerator {
         }
     }
 
+    private visitCommandStatement(node: AST.CommandStatement): void {
+        const spyglass = getSpyglassManager();
+        if (spyglass.isInitialized()) {
+            const errors = spyglass.validateCommand(node.command);
+
+            for (const error of errors) {
+                const startLine = node.commandRange.start.line;
+                const startCol =
+                    node.commandRange.start.character + error.start;
+
+                this.diagnostics.push({
+                    range: new vscode.Range(
+                        startLine,
+                        startCol,
+                        startLine,
+                        startCol + error.length
+                    ),
+                    message: error.message,
+                    severity:
+                        error.severity === "error"
+                            ? vscode.DiagnosticSeverity.Error
+                            : error.severity === "warning"
+                              ? vscode.DiagnosticSeverity.Warning
+                              : vscode.DiagnosticSeverity.Information,
+                    source: "minecraft",
+                });
+            }
+        }
+    }
+
+    private visitMacroCommandStatement(
+        _node: AST.MacroCommandStatement
+    ): void {}
+
     private visitBlockStatement(node: AST.BlockStatement): void {
-        // Enter block scope
+        
         const blockScope = this.findScopeForRange(node.range);
         if (blockScope) {
             const previousScope = this.currentScope;
@@ -280,18 +357,18 @@ export class DiagnosticGenerator {
                 this.visitExpression(node.expression);
                 break;
             default:
-                // Literals don't need special handling
+                
                 break;
         }
     }
 
     private visitIdentifier(node: AST.Identifier): void {
-        // Skip special identifiers
+        
         if (node.name === "__namespace__" || node.name === "__main__") {
             return;
         }
 
-        // Check if identifier is defined
+        
         if (this.currentScope) {
             const symbol = this.currentScope.resolve(node.name);
             if (!symbol) {
@@ -305,7 +382,7 @@ export class DiagnosticGenerator {
     }
 
     private visitCallExpression(node: AST.CallExpression): void {
-        // Check function existence
+        
         if (node.callee.type === "Identifier") {
             if (this.currentScope) {
                 const symbol = this.currentScope.resolve(node.callee.name);
@@ -316,7 +393,7 @@ export class DiagnosticGenerator {
                         vscode.DiagnosticSeverity.Warning
                     );
                 } else if (symbol.kind === "builtin" && symbol.params) {
-                    // Check argument count for built-in functions
+                    
                     const minParams = symbol.params.filter(
                         p => !p.name.startsWith("...")
                     ).length;
@@ -341,7 +418,7 @@ export class DiagnosticGenerator {
             }
         }
 
-        // Visit arguments
+        
         for (const arg of node.arguments) {
             this.visitExpression(arg);
         }
@@ -351,12 +428,12 @@ export class DiagnosticGenerator {
         if (!this.globalScope) return null;
 
         const findScope = (scope: Scope): Scope | null => {
-            // Check if range is within this scope
+            
             if (
                 range.start.line >= scope.range.start.line &&
                 range.end.line <= scope.range.end.line
             ) {
-                // Check children first (more specific scopes)
+                
                 for (const child of scope.children) {
                     const found = findScope(child);
                     if (found) return found;

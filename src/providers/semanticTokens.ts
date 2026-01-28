@@ -5,29 +5,35 @@ import { DocumentManager } from "../utils/document";
 import { Range } from "../utils/position";
 import { getSpyglassManager } from "../minecraft/spyglass";
 
-// Semantic token types (using VS Code built-in types)
+
 export const TOKEN_TYPES = [
-    "namespace", // __namespace__, __main__
-    "type", // type conversion functions (int, float, double, string, bool)
-    "function", // function definitions/calls
-    "variable", // variables
-    "parameter", // function parameters
-    "property", // module.property access
-    "number", // number literals
-    "string", // string literals
-    "keyword", // keywords
-    "operator", // operators
-    "comment", // comments
-    "macro", // $(var) macro expansions
-    "enumMember", // true, false
+    "namespace", 
+    "type", 
+    "class", 
+    "enum", 
+    "interface", 
+    "struct", 
+    "function", 
+    "method", 
+    "variable", 
+    "parameter", 
+    "property", 
+    "decorator", 
+    "number", 
+    "string", 
+    "keyword", 
+    "operator", 
+    "comment", 
+    "macro", 
+    "enumMember", 
 ];
 
 export const TOKEN_MODIFIERS = [
-    "declaration", // definition location
-    "definition", // function definition
-    "readonly", // built-in functions
-    "defaultLibrary", // built-in functions
-    "modification", // assignment target
+    "declaration", 
+    "definition", 
+    "readonly", 
+    "defaultLibrary", 
+    "modification", 
 ];
 
 export const LEGEND = new vscode.SemanticTokensLegend(
@@ -39,9 +45,17 @@ export class SemanticTokensProvider
     implements vscode.DocumentSemanticTokensProvider
 {
     private documentManager: DocumentManager;
+    private activeDocument?: vscode.TextDocument;
+    private _onDidChangeSemanticTokens = new vscode.EventEmitter<void>();
+    readonly onDidChangeSemanticTokens: vscode.Event<void> =
+        this._onDidChangeSemanticTokens.event;
 
     constructor(documentManager: DocumentManager) {
         this.documentManager = documentManager;
+    }
+
+    refresh(): void {
+        this._onDidChangeSemanticTokens.fire();
     }
 
     provideDocumentSemanticTokens(
@@ -50,6 +64,7 @@ export class SemanticTokensProvider
     ): vscode.ProviderResult<vscode.SemanticTokens> {
         const parseResult = this.documentManager.parse(document);
         const builder = new vscode.SemanticTokensBuilder(LEGEND);
+        this.activeDocument = document;
 
         this.buildTokens(
             parseResult.program,
@@ -58,7 +73,21 @@ export class SemanticTokensProvider
             document
         );
 
-        return builder.build();
+        
+        if (parseResult.comments) {
+            for (const comment of parseResult.comments) {
+                this.addToken(
+                    builder,
+                    comment.range,
+                    TOKEN_TYPES.indexOf("comment"),
+                    []
+                );
+            }
+        }
+
+        const tokens = builder.build();
+        this.activeDocument = undefined;
+        return tokens;
     }
 
     private buildTokens(
@@ -124,7 +153,7 @@ export class SemanticTokensProvider
         scope: Scope,
         builder: vscode.SemanticTokensBuilder
     ): void {
-        // Variable name (declaration)
+        
         this.addToken(
             builder,
             node.name.range,
@@ -143,7 +172,7 @@ export class SemanticTokensProvider
         builder: vscode.SemanticTokensBuilder,
         document: vscode.TextDocument
     ): void {
-        // Function name (declaration + definition)
+        
         this.addToken(
             builder,
             node.name.range,
@@ -154,7 +183,7 @@ export class SemanticTokensProvider
             ]
         );
 
-        // Parameters
+        
         for (const param of node.params) {
             this.addToken(
                 builder,
@@ -164,7 +193,7 @@ export class SemanticTokensProvider
             );
         }
 
-        // Body
+        
         this.visitBlockStatement(node.body, scope, builder, document);
     }
 
@@ -202,7 +231,7 @@ export class SemanticTokensProvider
         scope: Scope,
         builder: vscode.SemanticTokensBuilder
     ): void {
-        // Import source as namespace
+        
         this.addToken(
             builder,
             node.source.range,
@@ -217,9 +246,9 @@ export class SemanticTokensProvider
         builder: vscode.SemanticTokensBuilder,
         document: vscode.TextDocument
     ): void {
-        // Highlight the subcommands string
+        
         if (node.subcommands) {
-            // Use actual text from document to ensure accurate offsets
+            
             const range = new vscode.Range(
                 node.subcommandRange.start.line,
                 node.subcommandRange.start.character,
@@ -228,14 +257,14 @@ export class SemanticTokensProvider
             );
             const text = document.getText(range);
 
-            // Prepend "execute " context for accurate tokenization
+            
             const fullCommand = "execute " + text;
-            // Adjust range start column when highlighting because we added "execute " prefix
-            // But highlightMcCommand expects text to match range?
-            // Actually highlightMcCommand re-tokenizes.
-            // If we pass "execute run say hi", tokens will be at relative offsets 0..7 (execute), 8..11 (run), etc.
-            // But our range starts at `run` in the document.
-            // So we need to subtract "execute ".length + 1 (space) from the token start to map back to document range.
+            
+            
+            
+            
+            
+            
 
             this.highlightMcCommand(
                 fullCommand,
@@ -273,28 +302,22 @@ export class SemanticTokensProvider
         const tokens = spyglassManager.getCommandSemanticTokens(command);
 
         for (const token of tokens) {
-            // Assume single line commands for now
+            
             const line = range.start.line;
-            // Adjust for added context (e.g. "execute ")
-            // token.start is relative to `command`.
-            // We want relative to `range`.
-            // If offsetAdjustment is 8 ("execute "), and token is "run" at 8,
-            // relative start should be 8 - 8 = 0.
+            
+            
+            
+            
+            
 
             const relativeTokenStart = token.start - offsetAdjustment;
-            if (relativeTokenStart < 0) continue; // specific token is part of the prefix context
+            if (relativeTokenStart < 0) continue; 
 
             const startChar = range.start.character + relativeTokenStart;
 
             const tokenTypeIndex = TOKEN_TYPES.indexOf(token.tokenType);
             if (tokenTypeIndex !== -1) {
-                builder.push(
-                    line,
-                    startChar,
-                    token.length,
-                    tokenTypeIndex,
-                    0 // No modifiers for now
-                );
+                builder.push(line, startChar, token.length, tokenTypeIndex, 0);
             }
         }
     }
@@ -304,7 +327,7 @@ export class SemanticTokensProvider
         scope: Scope,
         builder: vscode.SemanticTokensBuilder
     ): void {
-        // Highlight macro expansions
+        
         for (const expansion of node.macroExpansions) {
             this.addToken(
                 builder,
@@ -369,7 +392,7 @@ export class SemanticTokensProvider
                 this.visitExpression(node.argument, scope, builder);
                 break;
             case "AssignmentExpression":
-                // Target gets modification modifier
+                
                 if (node.target.type === "Identifier") {
                     this.visitIdentifier(node.target, scope, builder, true);
                 } else {
@@ -385,7 +408,7 @@ export class SemanticTokensProvider
                 if (node.computed) {
                     this.visitExpression(node.property, scope, builder);
                 } else if (node.property.type === "Identifier") {
-                    // Non-computed property access
+                    
                     this.addToken(
                         builder,
                         node.property.range,
@@ -402,6 +425,64 @@ export class SemanticTokensProvider
             case "ParenExpression":
                 this.visitExpression(node.expression, scope, builder);
                 break;
+            case "NbtLiteral":
+                
+                const range = new vscode.Range(
+                    node.range.start.line,
+                    node.range.start.character,
+                    node.range.end.line,
+                    node.range.end.character
+                );
+                
+                
+                if (!this.activeDocument) break;
+                const text = this.activeDocument.getText(range);
+
+                
+                const spyglass = getSpyglassManager();
+                const nbtTokens = spyglass.getNbtTokens(text);
+
+                for (const token of nbtTokens) {
+                    const line = node.range.start.line; 
+
+                    const startOffset = this.activeDocument.offsetAt(
+                        new vscode.Position(
+                            node.range.start.line,
+                            node.range.start.character
+                        )
+                    );
+                    const tokenStartAbs = startOffset + token.start;
+                    const tokenStartPos =
+                        this.activeDocument.positionAt(tokenStartAbs);
+
+                    const tokenEndPos = this.activeDocument.positionAt(
+                        tokenStartAbs + token.length
+                    );
+                    const tokenRange = new vscode.Range(
+                        tokenStartPos,
+                        tokenEndPos
+                    );
+
+                    const typeIdx = TOKEN_TYPES.indexOf(token.tokenType);
+                    if (typeIdx !== -1) {
+                        this.addToken(
+                            builder,
+                            {
+                                start: {
+                                    line: tokenRange.start.line,
+                                    character: tokenRange.start.character,
+                                },
+                                end: {
+                                    line: tokenRange.end.line,
+                                    character: tokenRange.end.character,
+                                },
+                            },
+                            typeIdx,
+                            []
+                        );
+                    }
+                }
+                break;
             default:
                 break;
         }
@@ -413,7 +494,7 @@ export class SemanticTokensProvider
         builder: vscode.SemanticTokensBuilder,
         isModification = false
     ): void {
-        // Special identifiers
+        
         if (node.name === "__namespace__" || node.name === "__main__") {
             this.addToken(
                 builder,
@@ -424,10 +505,10 @@ export class SemanticTokensProvider
             return;
         }
 
-        // Resolve symbol
+        
         const symbol = scope.resolve(node.name);
         if (!symbol) {
-            // Undefined - just mark as variable
+            
             this.addToken(
                 builder,
                 node.range,
@@ -473,11 +554,11 @@ export class SemanticTokensProvider
         scope: Scope,
         builder: vscode.SemanticTokensBuilder
     ): void {
-        // Callee
+        
         if (node.callee.type === "Identifier") {
             const symbol = scope.resolve(node.callee.name);
 
-            // Check if it's a type conversion function
+            
             const typeConversionFunctions = [
                 "int",
                 "float",
@@ -501,7 +582,7 @@ export class SemanticTokensProvider
             this.visitExpression(node.callee, scope, builder);
         }
 
-        // Arguments
+        
         for (const arg of node.arguments) {
             this.visitExpression(arg, scope, builder);
         }

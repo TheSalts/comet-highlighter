@@ -26,7 +26,6 @@ def detect(){
     }
 }
 
-
 def set_health(){
     /execute store result score @s 40planet_health run data get entity @s Health
     execute(unless score "@s" "40planet_health" = "@s" "40planet_pre_health"){

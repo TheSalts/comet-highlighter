@@ -1,0 +1,1 @@
+execute as @a at @s run say 1

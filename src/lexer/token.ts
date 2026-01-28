@@ -1,64 +1,64 @@
 import { Range } from "../utils/position";
 
 export enum TokenType {
-    // Literals
-    IntLiteral, // 1, -2, 100
-    FloatLiteral, // 1f, 2.7f
-    DoubleLiteral, // 1.0, 3.14
-    StringLiteral, // "..."
-    BoolLiteral, // true, false
+    
+    IntLiteral, 
+    FloatLiteral, 
+    DoubleLiteral, 
+    StringLiteral, 
+    BoolLiteral, 
 
-    // Keywords
-    Var, // var
-    Def, // def
-    If, // if
-    Else, // else
-    While, // while
-    Break, // break
-    Return, // return
-    Import, // import
-    Execute, // execute
-    And, // and
-    Or, // or
+    
+    Var, 
+    Def, 
+    If, 
+    Else, 
+    While, 
+    Break, 
+    Return, 
+    Import, 
+    Execute, 
+    And, 
+    Or, 
 
-    // Special identifiers
-    DunderNamespace, // __namespace__
-    DunderMain, // __main__
+    
+    DunderNamespace, 
+    DunderMain, 
 
-    // Identifier & Operators
-    Identifier, // [a-zA-Z_][a-zA-Z0-9_]*
-    Plus, // +
-    Minus, // -
-    Star, // *
-    Slash, // /
-    Percent, // %
-    Eq, // ==
-    NotEq, // !=
-    Lt, // <
-    Gt, // >
-    LtEq, // <=
-    GtEq, // >=
-    Assign, // =
-    Not, // !
+    
+    Identifier, 
+    Plus, 
+    Minus, 
+    Star, 
+    Slash, 
+    Percent, 
+    Eq, 
+    NotEq, 
+    Lt, 
+    Gt, 
+    LtEq, 
+    GtEq, 
+    Assign, 
+    Not, 
 
-    // Punctuation
-    LParen, // (
-    RParen, // )
-    LBrace, // {
-    RBrace, // }
-    LBracket, // [
-    RBracket, // ]
-    Comma, // ,
-    Dot, // .
-    Semicolon, // ;
-    Colon, // :
+    
+    LParen, 
+    RParen, 
+    LBrace, 
+    RBrace, 
+    LBracket, 
+    RBracket, 
+    Comma, 
+    Dot, 
+    Semicolon, 
+    Colon, 
 
-    // Special
-    CommandLine, // /...  (entire line)
-    MacroCommandLine, // /$... (entire line)
-    Comment, // # ...
-    Newline, // \n (significant for statement separation)
-    EOF, // End of file
+    
+    CommandLine, 
+    MacroCommandLine, 
+    Comment, 
+    Newline, 
+    EOF, 
 }
 
 export interface Token {
@@ -75,7 +75,7 @@ export function createToken(
     return { type, value, range };
 }
 
-// Keyword mapping
+
 export const KEYWORDS: Map<string, TokenType> = new Map([
     ["var", TokenType.Var],
     ["def", TokenType.Def],

@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
 
 export interface Position {
-  line: number;      // 0-based
-  character: number; // 0-based
+  line: number;      
+  character: number; 
 }
 
 export interface Range {

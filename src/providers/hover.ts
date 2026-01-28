@@ -21,7 +21,7 @@ export class HoverProvider implements vscode.HoverProvider {
         const parseResult = this.documentManager.parse(document);
         const pos = vscodePositionToPosition(position);
 
-        // Find the identifier at the cursor position
+        
         const identifier = this.findIdentifierAtPosition(
             parseResult.program,
             pos
@@ -30,13 +30,13 @@ export class HoverProvider implements vscode.HoverProvider {
             return null;
         }
 
-        // Resolve the symbol
+        
         const symbol = parseResult.scope.resolve(identifier.name);
         if (!symbol) {
             return null;
         }
 
-        // Create hover content based on symbol kind
+        
         const markdown = new vscode.MarkdownString();
         markdown.isTrusted = true;
 
@@ -64,23 +64,23 @@ export class HoverProvider implements vscode.HoverProvider {
 
             case "variable":
                 let typeStr = "any";
-                // find definition node to infer type
-                // symbol.declarationRange gives us the range of the identifier.
-                // We need the parent VarDeclaration node.
-                // This is hard without traversing up or having a map.
-                // For now, let's try to infer from the symbol if we stored type.
-                // Or we can assume the user wants type inference on hover of the variable Usage.
+                
+                
+                
+                
+                
+                
 
-                // If we are hovering the definition, we can access the node via AST search?
-                // `identifier` is independent of declaration.
+                
+                
 
-                // Let's improve this: Symbol should store inferred type if possible.
-                // OR we run inference on the init expression if we can find it.
+                
+                
 
-                // Simplified approach: just show "variable name" for now + type if known
-                // But we didn't store type in Symbol for variables yet.
+                
+                
 
-                // Let's try to find the VarDeclaration node from the program.
+                
                 const declNode = this.findDeclarationNode(
                     parseResult.program,
                     symbol.declarationRange
@@ -125,14 +125,14 @@ export class HoverProvider implements vscode.HoverProvider {
         const visitNode = (node: any): void => {
             if (!node || typeof node !== "object") return;
 
-            // Check if this is an Identifier and contains the position
+            
             if (node.type === "Identifier" && node.range) {
                 if (this.rangeContainsPosition(node.range, pos)) {
                     found = node;
                 }
             }
 
-            // Recursively visit all properties
+            
             for (const key in node) {
                 if (key === "range" || key === "type") continue;
                 const value = node[key];

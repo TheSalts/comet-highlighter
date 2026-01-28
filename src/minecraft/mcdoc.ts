@@ -19,7 +19,7 @@ export class McdocManager {
             await this.downloadSourceFiles();
 
             const mcdocRoot = path.join(this.cachePath, "mcdoc");
-            // Normalize path to URI format for Spyglass
+            
             const toUri = (p: string) =>
                 `file://${p.replace(/\\/g, "/")}${p.endsWith("/") ? "" : "/"}` as `${string}/`;
 
@@ -28,11 +28,11 @@ export class McdocManager {
                 path.join(this.cachePath, "spyglass_cache")
             );
 
-            console.log("Initializing Spyglass Service for MCDoc...");
-            console.log("Root:", mainRootUri);
+            console.log("[COMET] Initializing Spyglass Service for MCDoc...");
+            console.log("[COMET] Root:", mainRootUri);
 
             const { Service, FileService } = await import("@spyglassmc/core");
-            // @ts-ignore
+            
             const { NodeJsExternals } =
                 require("@spyglassmc/core/lib/nodejs") as any;
 
@@ -40,7 +40,7 @@ export class McdocManager {
             const fileService = FileService.create(externals, cacheRootUri);
 
             this.service = new Service({
-                logger: console, // Simple logger
+                logger: console, 
                 project: {
                     cacheRoot: cacheRootUri,
                     projectRoots: [mainRootUri],
@@ -49,20 +49,20 @@ export class McdocManager {
                 },
             });
 
-            // Register MCDoc
+            
             const mcdoc = await import("@spyglassmc/mcdoc");
             mcdoc.initialize({ meta: this.service.project.meta });
 
             await this.service.project.ready();
 
             this.initialized = true;
-            console.log("MCDoc Service fully initialized.");
+            console.log("[COMET] MCDoc Service fully initialized.");
 
-            // Debug: print some symbols
-            // const symbols = this.service.project.symbols.global.get("mcdoc/struct");
-            // console.log("Loaded structs:", Object.keys(symbols || {}).length);
+            
+            
+            
         } catch (e) {
-            console.warn("Failed to initialize MCDoc Service:", e);
+            console.warn("[COMET] Failed to initialize MCDoc Service:", e);
         }
     }
 
@@ -79,7 +79,7 @@ export class McdocManager {
             }
         }
 
-        console.log("Downloading MCDoc tarball...");
+        console.log("[COMET] Downloading MCDoc tarball...");
 
         await new Promise<void>((resolve, reject) => {
             const file = fs.createWriteStream(tarballPath);
@@ -108,7 +108,7 @@ export class McdocManager {
                 });
         });
 
-        console.log("Extracting MCDoc tarball...");
+        console.log("[COMET] Extracting MCDoc tarball...");
         const child_process = require("child_process");
         if (!fs.existsSync(mcdocDir))
             fs.mkdirSync(mcdocDir, { recursive: true });
@@ -118,10 +118,10 @@ export class McdocManager {
                 `tar -xf "${tarballPath}" -C "${mcdocDir}"`,
                 (error: any, stdout: any, stderr: any) => {
                     if (error) {
-                        console.warn("Tar extraction failed:", stderr);
+                        console.warn("[COMET] Tar extraction failed:", stderr);
                         reject(error);
                     } else {
-                        console.log("MCDoc extracted successfully.");
+                        console.log("[COMET] MCDoc extracted successfully.");
                         resolve();
                     }
                 }
@@ -135,22 +135,22 @@ export class McdocManager {
     ): string | undefined {
         if (!this.service) return undefined;
 
-        // MCDoc symbols are stored in queryable tables.
-        // We need to map minecraft ID to MCDoc symbol path.
-        // The library relies on "dispatch" usually, assuming we are parsing a file.
-        // But here we want to look up a definition.
+        
+        
+        
+        
 
-        // With the full library, the "symbols.json" logic from before (path guessing) is still relevant
-        // because the parsed symbols follow the same path structure.
-        // But we must query the symbol table of the service.
+        
+        
+        
 
-        // Category mapping:
-        // Structs are usually in 'mcdoc/struct' category in global table?
-        // Let's inspect the categories used by MCDoc.
-        // Based on symbols.json, the keys were like "::java::...".
-        // The library puts these in the global symbol table.
+        
+        
+        
+        
+        
 
-        // Attempt to search in 'mcdoc/struct' or generic definitions.
+        
 
         const cleanId = id.replace("minecraft:", "");
         const pascalName = cleanId
@@ -159,29 +159,29 @@ export class McdocManager {
             .join("");
         const searchSuffix = `::${pascalName}`;
 
-        // Access global symbol table
-        // The type for symbols is TwowayMap or similar.
-        // Service.project.symbols.global.get(category) returns resolved map?
+        
+        
+        
 
-        // Warning: Internal API might be complex.
-        // Let's try to iterate 'mcdoc' category if it exists.
+        
+        
 
-        // As a fallback/proxy to previous logic, we can try to iterate known symbols if exposed.
-        // But we don't have the simple JSON map anymore.
-        // We have to rely on the service.
+        
+        
+        
 
-        // Actually, for autocompletion, if we can match the ID to a "definition", we can ask the service specifically.
-        // But we need the symbol path.
+        
+        
 
-        // Let's create a temporary heuristic using the cached files if needed, or iterate valid symbols.
-        // Iterating ALL global symbols might be slow but let's try.
+        
+        
 
         const globalSymbols = this.service.project.symbols.global;
-        // globalSymbols is a SymbolTable.
-        // We can't iterate easily?
-        // It has `get(category)`?
-        // Let's try 'mcdoc/struct'
-        // @ts-ignore
+        
+        
+        
+        
+        
         const structs = globalSymbols?.get("mcdoc/struct") || {};
 
         for (const key of Object.keys(structs)) {
@@ -190,7 +190,7 @@ export class McdocManager {
             }
         }
 
-        // Partial search
+        
         for (const key of Object.keys(structs)) {
             if (key.includes(`::${category}::`)) {
                 const lastPart = key.split("::").pop();
@@ -209,38 +209,38 @@ export class McdocManager {
     getCompletions(symbolPath: string): vscode.CompletionItem[] {
         if (!this.service) return [];
 
-        // We have a symbol path. We need to find its definition in the service.
-        // 'mcdoc/struct' category.
+        
+        
 
         const globalSymbols = this.service.project.symbols.global;
-        // @ts-ignore
+        
         const structMap = globalSymbols?.get("mcdoc/struct");
         const symbol = structMap?.[symbolPath];
 
         if (!symbol) return [];
 
-        // Symbol is a `Symbol` object from @spyglassmc/core.
-        // It might reference the definition node.
-        // But we might need the "bound" validation type.
+        
+        
+        
 
-        // If we have the AST Node of the struct definition, we can walk fields.
+        
 
-        // This part is much harder with the library than with JSON because we deal with AST nodes.
-        // However, the library *should* provide helpers.
+        
+        
 
-        // For now, let's just return a placeholder or try to inspect `symbol.members`?
-        // Struct symbols usually have `members` or similar.
-        // Or we need to resolve it.
+        
+        
+        
 
         const items: vscode.CompletionItem[] = [];
 
-        // If we can get the node.
+        
         if (symbol.declaration?.node) {
-            // We need to cast this node to StructDefinitionNode
-            // And iterate fields.
-            // Logic is similar to traverse.
-            // But we lack the specific types imported here.
-            // We can do best-effort loose typing.
+            
+            
+            
+            
+            
 
             const node = symbol.declaration.node as any;
             if (node.fields) {

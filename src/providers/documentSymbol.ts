@@ -47,7 +47,7 @@ export class DocumentSymbolProvider implements vscode.DocumentSymbolProvider {
                     node.name.range
                 );
 
-                // Add parameters as children
+                
                 for (const param of node.params) {
                     const paramSymbol = this.createSymbol(
                         param.name.name,
@@ -58,7 +58,7 @@ export class DocumentSymbolProvider implements vscode.DocumentSymbolProvider {
                     funcSymbol.children.push(paramSymbol);
                 }
 
-                // Add nested symbols from function body
+                
                 for (const stmt of node.body.body) {
                     const child = this.visitStatement(stmt);
                     if (child) {
@@ -77,7 +77,7 @@ export class DocumentSymbolProvider implements vscode.DocumentSymbolProvider {
                 );
 
             case "IfStatement":
-                // Recursively add symbols from if/else blocks
+                
                 const ifChildren: vscode.DocumentSymbol[] = [];
 
                 if (node.consequent.type === "BlockStatement") {
@@ -112,7 +112,7 @@ export class DocumentSymbolProvider implements vscode.DocumentSymbolProvider {
                     }
                 }
 
-                // Only return if there are meaningful symbols
+                
                 return ifChildren.length > 0 ? ifChildren[0] : null;
 
             case "WhileStatement":

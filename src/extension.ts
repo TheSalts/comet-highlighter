@@ -13,43 +13,16 @@ let documentManager: DocumentManager;
 let diagnosticCollection: vscode.DiagnosticCollection;
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log("Comet Highlighter v2 activated");
+    console.log("[COMET] Comet Highlighter v2 activated");
 
-    // Initialize document manager
+    
     documentManager = new DocumentManager();
 
-    // Initialize Spyglass for Minecraft command support
-    const config = vscode.workspace.getConfiguration("comet");
-    const fallbackVersion = config.get<string>("minecraftVersion", "1.21");
-
-    // Resolve version from comet.config.json if available
-    resolveTvVersion(fallbackVersion).then(async version => {
-        console.log(`Initializing Spyglass with MC version: ${version}`);
-
-        // Ensure global storage exists
-        try {
-            await vscode.workspace.fs.createDirectory(context.globalStorageUri);
-        } catch (error) {
-            console.warn("Failed to create global storage directory:", error);
-        }
-
-        const spyglassManager = getSpyglassManager();
-        spyglassManager.setCacheDir(context.globalStorageUri.fsPath);
-
-        const mcdocManager = getMcdocManager(); // Import this!
-        mcdocManager.setCacheDir(context.globalStorageUri.fsPath);
-        mcdocManager.initialize();
-
-        spyglassManager.initialize(version).catch(err => {
-            console.warn("Failed to initialize Spyglass:", err);
-        });
-    });
-
-    // Create diagnostic collection
+    
     diagnosticCollection = vscode.languages.createDiagnosticCollection("comet");
     context.subscriptions.push(diagnosticCollection);
 
-    // Register semantic tokens provider
+    
     const semanticTokensProvider = new SemanticTokensProvider(documentManager);
     context.subscriptions.push(
         vscode.languages.registerDocumentSemanticTokensProvider(
@@ -59,7 +32,7 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    // Register completion provider
+    
     const completionProvider = new CompletionProvider(documentManager);
     context.subscriptions.push(
         vscode.languages.registerCompletionItemProvider(
@@ -73,7 +46,7 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    // Register hover provider
+    
     const hoverProvider = new HoverProvider(documentManager);
     context.subscriptions.push(
         vscode.languages.registerHoverProvider(
@@ -82,7 +55,7 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    // Register definition provider
+    
     const definitionProvider = new DefinitionProvider(documentManager);
     context.subscriptions.push(
         vscode.languages.registerDefinitionProvider(
@@ -91,7 +64,7 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    // Register document symbol provider
+    
     const documentSymbolProvider = new DocumentSymbolProvider(documentManager);
     context.subscriptions.push(
         vscode.languages.registerDocumentSymbolProvider(
@@ -100,16 +73,22 @@ export function activate(context: vscode.ExtensionContext) {
         )
     );
 
-    // Update diagnostics on document change
+    
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     context.subscriptions.push(
         vscode.workspace.onDidChangeTextDocument(event => {
             if (event.document.languageId === "comet") {
-                updateDiagnostics(event.document);
+                if (timeout) {
+                    clearTimeout(timeout);
+                }
+                timeout = setTimeout(() => {
+                    updateDiagnostics(event.document);
+                }, 300);
             }
         })
     );
 
-    // Update diagnostics on document open
+    
     context.subscriptions.push(
         vscode.workspace.onDidOpenTextDocument(document => {
             if (document.languageId === "comet") {
@@ -118,7 +97,7 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    // Clear diagnostics on document close
+    
     context.subscriptions.push(
         vscode.workspace.onDidCloseTextDocument(document => {
             if (document.languageId === "comet") {
@@ -128,11 +107,53 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    // Update diagnostics for all open Comet documents
+    
     vscode.workspace.textDocuments.forEach(document => {
         if (document.languageId === "comet") {
             updateDiagnostics(document);
         }
+    });
+
+    
+    const config = vscode.workspace.getConfiguration("comet");
+    const fallbackVersion = config.get<string>("minecraftVersion", "1.21");
+
+    
+    resolveTvVersion(fallbackVersion).then(async version => {
+        console.log(
+            `[COMET] Initializing Spyglass with MC version: ${version}`
+        );
+
+        
+        try {
+            await vscode.workspace.fs.createDirectory(context.globalStorageUri);
+        } catch (error) {
+            console.warn(
+                "[COMET] Failed to create global storage directory:",
+                error
+            );
+        }
+
+        const spyglassManager = getSpyglassManager();
+        spyglassManager.setCacheDir(context.globalStorageUri.fsPath);
+
+        const mcdocManager = getMcdocManager(); 
+        mcdocManager.setCacheDir(context.globalStorageUri.fsPath);
+        mcdocManager.initialize();
+
+        spyglassManager
+            .initialize(version)
+            .then(() => {
+                semanticTokensProvider.refresh();
+                vscode.workspace.textDocuments.forEach(document => {
+                    if (document.languageId === "comet") {
+                        updateDiagnostics(document);
+                    }
+                });
+            })
+            .catch(err => {
+                console.warn("[COMET] Failed to initialize Spyglass:", err);
+            });
     });
 
     checkConfigInitialization(context);
@@ -146,7 +167,7 @@ async function checkConfigInitialization(context: vscode.ExtensionContext) {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) return;
 
-    // Check if comet.config.json exists in the first workspace folder
+    
     const configFiles = await vscode.workspace.findFiles("comet.config.json");
     if (configFiles.length > 0) return;
 
@@ -197,7 +218,7 @@ async function resolveTvVersion(fallback: string): Promise<string> {
             return jsonContent.mcversion;
         }
     } catch (e) {
-        // File not found or invalid JSON, use fallback
+        
     }
     return fallback;
 }

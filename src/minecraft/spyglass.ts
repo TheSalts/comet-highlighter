@@ -22,10 +22,19 @@ interface RegistryData {
     [key: string]: string[];
 }
 
+export interface CommandValidationError {
+    start: number;
+    length: number;
+    message: string;
+    severity: "error" | "warning" | "info";
+}
+
 export class SpyglassManager {
     private initialized = false;
     private commandTree: CommandTree | null = null;
     private registries: RegistryData = {};
+    private commandTokensCache = new Map<string, any[]>();
+    private readonly MAX_CACHE_SIZE = 100;
     private version: string = "1.21.11";
     private cachePath: string | null = null;
     private registryMap: Record<string, string> = {
@@ -38,20 +47,27 @@ export class SpyglassManager {
         "minecraft:enchantment": "enchantment",
         "minecraft:particle": "particle_type",
         "minecraft:attribute": "attribute",
-        "minecraft:dimension": "dimension_type",
-        "minecraft:game_profile": "", // No registry
-        "minecraft:score_holder": "", // Special handling
-        "minecraft:resource_location": "", // Context dependent, usually generic
-        "minecraft:function": "function", // Not a real registry in spyglass dump usually, but handled
+        "minecraft:dimension": "dimension",
+        "minecraft:game_profile": "", 
+        "minecraft:score_holder": "", 
+        "minecraft:resource_location": "", 
+        "minecraft:function": "function", 
         "minecraft:time": "",
         "minecraft:uuid": "",
         "minecraft:color": "",
         "minecraft:swizzle": "",
-        "minecraft:team": "", // Dynamic
-        "minecraft:objective": "", // Dynamic
+        "minecraft:team": "", 
+        "minecraft:objective": "", 
+        "minecraft:loot_table": "loot_table",
+        "minecraft:recipe": "recipe",
+        "minecraft:advancement": "advancement",
+        "minecraft:sound": "sound_event",
+        "minecraft:fluid": "fluid",
+        "minecraft:potion": "potion",
+        "minecraft:sound_event": "sound_event",
     };
 
-    // Parsers that carry properties.registry (1.21.11+)
+    
     private static readonly REGISTRY_PROPERTY_PARSERS = new Set([
         "minecraft:resource_key",
         "minecraft:resource",
@@ -60,7 +76,7 @@ export class SpyglassManager {
         "minecraft:resource_selector",
     ]);
 
-    // How many space-separated tokens a parser consumes
+    
     private static getParserTokenCount(parser: string): number {
         switch (parser) {
             case "minecraft:block_pos":
@@ -96,7 +112,7 @@ export class SpyglassManager {
         this.version = apiVersion;
 
         const fetchData = async (ver: string) => {
-            console.log(`Fetching Spyglass data for MC ${ver}...`);
+            console.log(`[COMET] Fetching Spyglass data for MC ${ver}...`);
             return Promise.all([
                 this.fetchJson<CommandTree>(
                     `https://api.spyglassmc.com/mcje/versions/${ver}/commands`,
@@ -115,25 +131,27 @@ export class SpyglassManager {
             this.commandTree = commands;
             this.registries = registries;
             this.initialized = true;
-            console.log(`Spyglass data for ${apiVersion} loaded successfully`);
+            console.log(
+                `[COMET] Spyglass data for ${apiVersion} loaded successfully`
+            );
         } catch (error) {
             console.warn(
-                `Failed to fetch Spyglass data for ${apiVersion}, trying fallback to 1.21.1:`,
+                `[COMET] Failed to fetch Spyglass data for ${apiVersion}, trying fallback to 1.21.1:`,
                 error
             );
             try {
-                // Fallback to known stable version
+                
                 const fallbackVersion = "1.21.1";
                 const [commands, registries] = await fetchData(fallbackVersion);
                 this.commandTree = commands;
                 this.registries = registries;
                 this.initialized = true;
                 console.log(
-                    `Spyglass fallback data (${fallbackVersion}) loaded successfully`
+                    `[COMET] Spyglass fallback data (${fallbackVersion}) loaded successfully`
                 );
             } catch (fallbackError) {
                 console.warn(
-                    "Failed to fetch fallback Spyglass data:",
+                    "[COMET] Failed to fetch fallback Spyglass data:",
                     fallbackError
                 );
                 this.initialized = false;
@@ -145,49 +163,322 @@ export class SpyglassManager {
         return this.initialized;
     }
 
-    getCommandCompletions(command: string, cursorOffset: number): any[] {
+    validateCommand(
+        command: string,
+        options: { ignoreIncomplete?: boolean } = {}
+    ): CommandValidationError[] {
+        const errors: CommandValidationError[] = [];
+
+        if (!this.initialized || !this.commandTree) {
+            return errors;
+        }
+
+        const cleanCommand = command.startsWith("/")
+            ? command.substring(1)
+            : command;
+
+        if (cleanCommand.trim() === "") {
+            return errors;
+        }
+
+        const tokens = this.tokenize(cleanCommand.trim());
+        if (tokens.length === 0) {
+            return errors;
+        }
+
+        const firstToken = tokens[0];
+        if (!this.commandTree.children[firstToken]) {
+            errors.push({
+                start: command.startsWith("/") ? 1 : 0,
+                length: firstToken.length,
+                message: `Unknown command: ${firstToken}`,
+                severity: "error",
+            });
+            return errors;
+        }
+
+        let currentNodes: CommandNode[] = [this.commandTree];
+        let tokenIndex = 0;
+        let currentOffset = command.startsWith("/") ? 1 : 0;
+        let hasExecutable = false; 
+
+        while (tokenIndex < tokens.length) {
+            const token = tokens[tokenIndex];
+            const nextNodes: CommandNode[] = [];
+            let foundMatch = false;
+            let foundLiteral = false;
+            let argSkip = 0;
+
+            let hasRedirect = false; 
+
+            for (const node of currentNodes) {
+                if (!node.children) continue;
+
+                if (node.children[token]?.type === "literal") {
+                    const originalNode = node.children[token];
+                    
+                    if (originalNode.executable) {
+                        hasExecutable = true;
+                    }
+
+                    let targetNode = originalNode;
+                    if (targetNode.redirect) {
+                        hasRedirect = true;
+                        const redirected = this.resolveRedirect(
+                            targetNode.redirect
+                        );
+                        if (redirected) targetNode = redirected;
+                    }
+                    nextNodes.push(targetNode);
+                    foundLiteral = true;
+                    foundMatch = true;
+                    break;
+                }
+            }
+
+            if (!foundLiteral) {
+                for (const node of currentNodes) {
+                    if (!node.children) continue;
+                    for (const [key, child] of Object.entries(node.children)) {
+                        if (child.type === "argument") {
+                            
+                            if (child.executable) {
+                                hasExecutable = true;
+                            }
+
+                            let targetNode = child;
+                            if (targetNode.redirect) {
+                                hasRedirect = true;
+                                const redirected = this.resolveRedirect(
+                                    targetNode.redirect
+                                );
+                                if (redirected) targetNode = redirected;
+                            }
+                            nextNodes.push(targetNode);
+                            foundMatch = true;
+
+                            const count = SpyglassManager.getParserTokenCount(
+                                child.parser || ""
+                            );
+                            argSkip = Math.max(argSkip, count - 1);
+
+                            const validationError = this.validateArgument(
+                                token,
+                                child,
+                                currentOffset
+                            );
+                            if (validationError) {
+                                errors.push(validationError);
+                            }
+                            break;
+                        }
+                    }
+                    if (nextNodes.length > 0) break;
+                }
+            }
+
+            if (!foundMatch && tokenIndex > 0) {
+                const expectedTokens = this.getExpectedTokens(currentNodes);
+                if (expectedTokens.length > 0) {
+                    const expected = expectedTokens.slice(0, 5).join(", ");
+                    errors.push({
+                        start: currentOffset,
+                        length: token.length,
+                        message: `Unexpected argument: ${token}. Expected: ${expected}${expectedTokens.length > 5 ? "..." : ""}`,
+                        severity: "error",
+                    });
+                }
+            }
+
+            if (token === "run") {
+                currentNodes = [this.commandTree];
+                hasExecutable = false; 
+            } else if (nextNodes.length > 0) {
+                currentNodes = nextNodes;
+            }
+
+            
+            
+            
+            if (hasRedirect && tokenIndex + 1 + (foundLiteral ? 0 : argSkip) < tokens.length) {
+                hasExecutable = false;
+            }
+
+            currentOffset += token.length + 1;
+            tokenIndex += 1 + (foundLiteral ? 0 : argSkip);
+        }
+
+        
+        const hasExecutableNode = hasExecutable || currentNodes.some(node => node && node.executable);
+
+        if (
+            !options.ignoreIncomplete &&
+            !hasExecutableNode &&
+            currentNodes[0] !== this.commandTree
+        ) {
+            const expectedTokens = this.getExpectedTokens(currentNodes);
+            if (expectedTokens.length > 0) {
+                const expected = expectedTokens.slice(0, 5).join(", ");
+                errors.push({
+                    start: 0,
+                    length: command.length,
+                    message: `Incomplete command. Expected: ${expected}${expectedTokens.length > 5 ? "..." : ""}`,
+                    severity: "error",
+                });
+            }
+        }
+
+        return errors;
+    }
+
+    private validateArgument(
+        token: string,
+        node: CommandNode,
+        offset: number
+    ): CommandValidationError | null {
+        const parser = node.parser;
+        if (!parser) return null;
+
+        if (parser === "brigadier:integer") {
+            if (!/^-?\d+$/.test(token)) {
+                return {
+                    start: offset,
+                    length: token.length,
+                    message: `Expected integer, got: ${token}`,
+                    severity: "error",
+                };
+            }
+        } else if (
+            parser === "brigadier:float" ||
+            parser === "brigadier:double"
+        ) {
+            if (!/^-?\d+(\.\d+)?$/.test(token)) {
+                return {
+                    start: offset,
+                    length: token.length,
+                    message: `Expected number, got: ${token}`,
+                    severity: "error",
+                };
+            }
+        } else if (parser === "brigadier:bool") {
+            if (token !== "true" && token !== "false") {
+                return {
+                    start: offset,
+                    length: token.length,
+                    message: `Expected boolean (true/false), got: ${token}`,
+                    severity: "error",
+                };
+            }
+        } else if (parser === "minecraft:gamemode") {
+            const modes = ["survival", "creative", "adventure", "spectator"];
+            if (!modes.includes(token)) {
+                return {
+                    start: offset,
+                    length: token.length,
+                    message: `Invalid gamemode: ${token}. Expected: ${modes.join(", ")}`,
+                    severity: "error",
+                };
+            }
+        } else if (
+            parser.includes("entity") ||
+            parser === "minecraft:score_holder" ||
+            parser === "minecraft:game_profile"
+        ) {
+            if (!token.startsWith("@") && !/^[a-zA-Z0-9_]+$/.test(token)) {
+                return {
+                    start: offset,
+                    length: token.length,
+                    message: `Invalid entity selector or player name: ${token}`,
+                    severity: "warning",
+                };
+            }
+        }
+
+        const registryKey = this.resolveRegistryKey(node, "");
+        if (registryKey && this.registries[registryKey]) {
+            const entries = this.registries[registryKey];
+            const normalizedToken = token.replace(/^#/, "");
+            const fullId = normalizedToken.includes(":")
+                ? normalizedToken
+                : `minecraft:${normalizedToken}`;
+
+            const baseId = fullId.replace(/\[.*$/, "").replace(/\{.*$/, "");
+
+            if (
+                !entries.includes(baseId) &&
+                !entries.includes(baseId.replace("minecraft:", ""))
+            ) {
+                return {
+                    start: offset,
+                    length: token.length,
+                    message: `Unknown ${registryKey}: ${baseId}`,
+                    severity: "warning",
+                };
+            }
+        }
+
+        return null;
+    }
+
+    private getExpectedTokens(nodes: CommandNode[]): string[] {
+        const expected: string[] = [];
+        for (const node of nodes) {
+            if (!node.children) continue;
+            for (const [key, child] of Object.entries(node.children)) {
+                if (child.type === "literal") {
+                    expected.push(key);
+                } else if (child.type === "argument") {
+                    expected.push(`<${key}>`);
+                }
+            }
+        }
+        return expected;
+    }
+
+    getCommandCompletions(
+        command: string,
+        cursorOffset: number,
+        availableTags: string[] = []
+    ): vscode.CompletionItem[] {
         if (!this.initialized || !this.commandTree) {
             return this.getFallbackCompletions(command);
         }
 
-        // Handle leading slash or execute run
+        const items: any[] = [];
+        const seenLabels = new Set<string>();
+
+        
         const cleanCommand = command.startsWith("/")
             ? command.substring(1)
             : command;
         const offsetAdjustment = command.startsWith("/") ? 1 : 0;
         const effectiveOffset = cursorOffset - offsetAdjustment;
 
-        if (effectiveOffset < 0) return []; // Cursor was on list slash?
+        if (effectiveOffset < 0) return [];
 
-        // Check for selector context manually
+        
         const selectorMatch = cleanCommand
             .substring(0, effectiveOffset)
             .match(/(@[a-z])\[([^\]]*)$/);
         if (selectorMatch) {
             const selectorContent = selectorMatch[2];
-            const items: any[] = [];
-
-            // Check if we are in a value or a key
-            // Split by commas, take last
             const parts = selectorContent.split(",");
             const lastPart = parts[parts.length - 1].trim();
 
             if (lastPart.includes("=")) {
-                // Value completion
                 const [key, val] = lastPart.split("=").map(s => s.trim());
                 if (key === "type") {
                     this.addRegistryCompletions(
                         items,
                         "entity_type",
                         val,
-                        new Set()
+                        seenLabels
                     );
-                    // Negative types
                     this.addRegistryCompletions(
                         items,
                         "entity_type",
                         val.replace("!", ""),
-                        new Set(),
+                        seenLabels,
                         false,
                         true
                     );
@@ -203,20 +494,22 @@ export class SpyglassManager {
                         }
                     );
                     return items;
-                } else if (key === "sort") {
-                    ["nearest", "furthest", "random", "arbitrary"].forEach(
-                        m => {
-                            if (m.startsWith(val))
-                                items.push({
-                                    label: m,
-                                    kind: vscode.CompletionItemKind.EnumMember,
-                                });
+                } else if (key === "tag") {
+                    availableTags.forEach(t => {
+                        if (
+                            t.startsWith(val) ||
+                            t.startsWith(val.replace("!", ""))
+                        ) {
+                            items.push({
+                                label: t,
+                                kind: vscode.CompletionItemKind.Value,
+                                detail: "Tag",
+                            });
                         }
-                    );
+                    });
                     return items;
                 }
             } else {
-                // Key completion
                 const keys = [
                     "type",
                     "tag",
@@ -254,27 +547,39 @@ export class SpyglassManager {
 
         const textBeforeCursor = cleanCommand.substring(0, effectiveOffset);
 
-        // Tokenize partial input
+        
         const tokens = this.tokenize(textBeforeCursor.trim());
-        // Simple logic: if the textBeforeCursor ends with space, we are looking for the NEXT token.
-        // If it doesn't end with space, we are completing the CURRENT token.
         const isNewToken = textBeforeCursor.endsWith(" ");
 
         const completedArgs = isNewToken ? tokens : tokens.slice(0, -1);
         const currentInput = isNewToken ? "" : tokens[tokens.length - 1] || "";
 
-        // Traverse to find possible next nodes
+        
+        if (completedArgs.length >= 2 && completedArgs[0] === "tag") {
+            const action = completedArgs[2]; 
+            if (
+                (action === "add" || action === "remove") &&
+                completedArgs.length === 3
+            ) {
+                availableTags.forEach(tag => {
+                    if (tag.startsWith(currentInput) && !seenLabels.has(tag)) {
+                        items.push({
+                            label: tag,
+                            kind: vscode.CompletionItemKind.Value,
+                            detail: "Tag",
+                        });
+                        seenLabels.add(tag);
+                    }
+                });
+            }
+        }
+
+        
         const { nodes: contextNodes, midCoord } = this.traverse(
             this.commandTree,
             completedArgs
         );
 
-        const items: any[] = [];
-        const seenLabels = new Set<string>();
-
-        // If we are mid-way through a multi-token coordinate argument,
-        // offer coordinate completions (individual axis values) instead of
-        // normal children completions.
         if (midCoord > 0) {
             this.addSingleCoordinateCompletions(
                 items,
@@ -284,85 +589,38 @@ export class SpyglassManager {
             return items;
         }
 
-        // Check for NBT context in currentInput
+        
         if (currentInput.includes("{")) {
-            const nbtMatch = currentInput.match(/^([a-z0-9_.:]+)(\{.*)$/);
-            if (nbtMatch) {
-                const id = nbtMatch[1];
-                const nbtContent = nbtMatch[2];
-                // Check if cursor is inside braces
-                // We crudely assume yes if we are here, but strictly we should check cursorOffset relative to token start.
-                // For now, let's try to provide NBT completions if we can resolve the ID.
+            const nbtPart = currentInput.substring(
+                currentInput.lastIndexOf("{")
+            );
+            
+            if (/Tags\s*:\s*\[[^\]]*$/.test(nbtPart)) {
+                const match = /Tags\s*:\s*\[(.*)$/.exec(nbtPart);
+                if (match) {
+                    const content = match[1];
+                    const currentTag =
+                        content
+                            .split(",")
+                            .pop()
+                            ?.trim()
+                            .replace(/^"|"$/g, "") || "";
 
-                // Determine category based on contextNodes?
-                // Hard to know exact category (block vs item) just from string, but usually it's item or block.
-                // Let's try item first, then block, then entity?
-                // Or check the node parser?
-
-                let category: "item" | "block" | "entity" | null = null;
-                for (const node of contextNodes) {
-                    for (const child of Object.values(node.children || {})) {
-                        if (child.type === "argument" && child.parser) {
-                            if (
-                                child.parser === "minecraft:item_stack" ||
-                                child.parser === "minecraft:item_predicate"
-                            )
-                                category = "item";
-                            else if (
-                                child.parser === "minecraft:block_state" ||
-                                child.parser === "minecraft:block_predicate"
-                            )
-                                category = "block";
-                            else if (child.parser === "minecraft:entity_summon")
-                                category = "entity";
-                            // New-style resource parsers with properties.registry
-                            else if (
-                                SpyglassManager.REGISTRY_PROPERTY_PARSERS.has(
-                                    child.parser
-                                ) &&
-                                child.properties?.registry
-                            ) {
-                                const reg = child.properties.registry as string;
-                                if (reg.includes("item")) category = "item";
-                                else if (reg.includes("block"))
-                                    category = "block";
-                                else if (reg.includes("entity"))
-                                    category = "entity";
-                            }
+                    availableTags.forEach(tag => {
+                        if (
+                            tag.startsWith(currentTag) &&
+                            !seenLabels.has(tag)
+                        ) {
+                            items.push({
+                                label: tag,
+                                kind: vscode.CompletionItemKind.Value,
+                                detail: "Tag",
+                                insertText: `"${tag}"`,
+                            });
+                            seenLabels.add(tag);
                         }
-                    }
-                }
-
-                if (!category && id.includes("minecraft:chest"))
-                    category = "block"; // heuristic
-
-                if (category) {
-                    const mcdoc = getMcdocManager(); // Need import
-                    const symbol = mcdoc.findSymbol(category, id);
-                    if (symbol) {
-                        // We are inside NBT, we probably want fields.
-                        // But we need to know WHERE in NBT.
-                        // Simple case: top level fields.
-                        // If nbtContent is `{Di`, we want fields starting with Di.
-
-                        const nbtinside = nbtContent.substring(1); // after {
-                        // We need a proper NBT parser or at least split by comma to find current key
-                        // Crude approach: take last split by comma
-                        const parts = nbtinside.split(",");
-                        const lastPart = parts[parts.length - 1].trim();
-                        // If lastPart contains ':', it might be key:value. we don't complete values yet (except maybe enums)
-                        if (!lastPart.includes(":")) {
-                            const complications = mcdoc.getCompletions(symbol);
-                            for (const comp of complications) {
-                                if (
-                                    comp.label.toString().startsWith(lastPart)
-                                ) {
-                                    items.push(comp);
-                                }
-                            }
-                            return items; // Return mostly these
-                        }
-                    }
+                    });
+                    return items;
                 }
             }
         }
@@ -372,18 +630,16 @@ export class SpyglassManager {
 
             for (const [key, child] of Object.entries(node.children)) {
                 if (child.type === "literal") {
-                    // Suggest literal if it matches current input
                     if (key.startsWith(currentInput) && !seenLabels.has(key)) {
                         items.push({
                             label: key,
                             kind: vscode.CompletionItemKind.Keyword,
                             detail: "Literal",
-                            sortText: "0_" + key, // Prioritize literals
+                            sortText: "0_" + key,
                         });
                         seenLabels.add(key);
                     }
                 } else if (child.type === "argument") {
-                    // Suggest argument values
                     this.addArgumentCompletions(
                         items,
                         child,
@@ -405,34 +661,34 @@ export class SpyglassManager {
         const parser = node.parser;
         if (!parser) return undefined;
 
-        // 1. New-style parsers with properties.registry (1.21.11+)
+        
         if (SpyglassManager.REGISTRY_PROPERTY_PARSERS.has(parser)) {
             const reg: string | undefined = node.properties?.registry;
             if (reg) {
-                // Strip "minecraft:" prefix to match registry data keys
+                
                 const key = reg.replace(/^minecraft:/, "");
                 if (this.registries[key]) return key;
             }
             return undefined;
         }
 
-        // 2. Direct parser → registry map
+        
         const mapped = this.registryMap[parser];
         if (mapped && this.registries[mapped]) return mapped;
 
-        // 3. Fallback: strip namespace from parser name
+        
         if (mapped === undefined && parser.includes(":")) {
             const bareKey = parser.split(":")[1];
             if (this.registries[bareKey]) return bareKey;
         }
 
-        // 4. resource_location heuristic by argument name
+        
         if (parser === "minecraft:resource_location") {
             const heuristic = this.resourceLocationRegistryMap[nodeName];
             if (heuristic && this.registries[heuristic]) return heuristic;
         }
 
-        // 5. Dedicated loot/function parsers
+        
         if (parser === "minecraft:loot_table" && this.registries["loot_table"])
             return "loot_table";
 
@@ -504,7 +760,7 @@ export class SpyglassManager {
         const count = SpyglassManager.getParserTokenCount(parser);
         const axes3 = count === 3;
 
-        // Full coordinate snippets
+        
         const snippets: { label: string; insert: string; detail: string }[] =
             [];
 
@@ -550,7 +806,7 @@ export class SpyglassManager {
             }
         }
 
-        // Also offer single axis starters
+        
         this.addSingleCoordinateCompletions(items, currentInput, seenLabels);
     }
 
@@ -564,7 +820,7 @@ export class SpyglassManager {
         const parser = node.parser;
         if (!parser) return;
 
-        // Coordinate parsers get special completions
+        
         if (SpyglassManager.isCoordinateParser(parser)) {
             this.addCoordinateCompletions(
                 items,
@@ -575,7 +831,7 @@ export class SpyglassManager {
             return;
         }
 
-        // Try to resolve a registry key from the node
+        
         const registryKey = this.resolveRegistryKey(node, nodeName);
 
         if (registryKey) {
@@ -590,7 +846,7 @@ export class SpyglassManager {
                 seenLabels
             );
 
-            // For tag parsers, also suggest tag entries with # prefix
+            
             if (isTag) {
                 const tagKey = `tag/${registryKey}`;
                 if (this.registries[tagKey]) {
@@ -606,7 +862,7 @@ export class SpyglassManager {
             return;
         }
 
-        // Special handling for parsers without registry
+        
         if (parser === "brigadier:bool") {
             ["true", "false"].forEach(val => {
                 if (val.startsWith(currentInput) && !seenLabels.has(val)) {
@@ -685,7 +941,7 @@ export class SpyglassManager {
                 }
             }
         } else if (parser === "minecraft:resource_location" && !registryKey) {
-            // Generic resource_location without a resolved registry
+            
             if (
                 "minecraft:".startsWith(currentInput) &&
                 !seenLabels.has("minecraft:")
@@ -700,12 +956,7 @@ export class SpyglassManager {
         }
     }
 
-    /**
-     * Traverse the command tree consuming args.
-     * Returns { nodes, midCoord } where midCoord > 0 means we are
-     * partway through a multi-token coordinate argument and still
-     * need midCoord more tokens before advancing to the next node.
-     */
+     
     private traverse(
         root: CommandNode,
         args: string[]
@@ -751,7 +1002,7 @@ export class SpyglassManager {
             const remaining = args.length - (i + 1);
 
             if (!foundLiteral && skip > 0 && remaining < skip) {
-                // Exiting mid-way through a multi-token argument
+                
                 return { nodes: currentNodes, midCoord: skip - remaining };
             }
 
@@ -779,7 +1030,7 @@ export class SpyglassManager {
         const tokens: string[] = [];
         let current = "";
         let inString = false;
-        let braceDepth = 0; // simple tracking
+        let braceDepth = 0; 
 
         for (let i = 0; i < text.length; i++) {
             const c = text[i];
@@ -795,7 +1046,7 @@ export class SpyglassManager {
                     current.length > 0 &&
                     current.trim() === ""
                 ) {
-                    // Start of NBT after space
+                    
                 }
                 braceDepth++;
                 current += c;
@@ -821,15 +1072,23 @@ export class SpyglassManager {
         tokenType: string;
         tokenModifiers: string[];
     }[] {
-        if (!this.initialized || !this.commandTree) return [];
+        if (this.commandTokensCache.has(command)) {
+            return this.commandTokensCache.get(command)!;
+        }
 
-        // Simple tokenization retaining range info
+        if (!this.initialized || !this.commandTree) {
+            return this.getFallbackSemanticTokens(command);
+        }
+
+        
         const ranges = this.tokenizeWithRanges(command);
         const semanticTokens: any[] = [];
 
-        // We use a simplified traversal that greedily matches literals
+        
         let currentNodes: CommandNode[] = [this.commandTree];
         let tokenIndex = 0;
+        let isFirstLiteral = true; 
+        let afterRun = false; 
 
         while (tokenIndex < ranges.length) {
             const token = ranges[tokenIndex];
@@ -843,7 +1102,7 @@ export class SpyglassManager {
 
             let foundLiteral = false;
 
-            // 1. Try to find literal match first
+            
             for (const node of currentNodes) {
                 if (!node.children) continue;
                 if (
@@ -856,14 +1115,29 @@ export class SpyglassManager {
                         if (r) matchedNode = r;
                     }
                     nextNodes.push(matchedNode);
-                    matchType = "function"; // Literal command parts
+
+                    
+                    if (isFirstLiteral || afterRun) {
+                        matchType = "keyword"; 
+                        isFirstLiteral = false;
+                        afterRun = false;
+                    } else {
+                        matchType = "function"; 
+                    }
+
+                    
+                    
+                    if (tokenValue === "run") {
+                        afterRun = true;
+                    }
+
                     foundLiteral = true;
                     break;
                 }
             }
 
             if (!foundLiteral) {
-                // 2. If not literal, any argument node is a candidate
+                
                 for (const node of currentNodes) {
                     if (!node.children) continue;
                     for (const [key, child] of Object.entries(node.children)) {
@@ -885,13 +1159,17 @@ export class SpyglassManager {
             }
 
             if (matchedNode) {
-                currentNodes = nextNodes;
+                if (tokenValue === "run") {
+                    currentNodes = [this.commandTree];
+                } else {
+                    currentNodes = nextNodes;
+                }
                 const parser = matchedNode.parser;
 
-                // MULTI-TOKEN COORDINATE PARSERS
+                
                 if (parser && SpyglassManager.isCoordinateParser(parser)) {
                     const count = SpyglassManager.getParserTokenCount(parser);
-                    // Highlight this token + next (count-1) tokens as "number"
+                    
                     for (
                         let j = 0;
                         j < count && tokenIndex < ranges.length;
@@ -906,11 +1184,13 @@ export class SpyglassManager {
                         });
                         tokenIndex++;
                     }
-                    continue; // skip the tokenIndex++ at bottom
+                    continue; 
                 }
 
-                // SPECIAL HANDLING FOR COMPLEX ARGUMENTS
-                if (
+                
+
+                
+                const isComplexByParser =
                     parser &&
                     (parser.includes("entity") ||
                         parser === "minecraft:score_holder" ||
@@ -923,35 +1203,82 @@ export class SpyglassManager {
                         parser === "minecraft:nbt_compound_tag" ||
                         parser === "minecraft:nbt_tag" ||
                         parser === "minecraft:nbt_path" ||
-                        SpyglassManager.REGISTRY_PROPERTY_PARSERS.has(parser))
-                ) {
+                        SpyglassManager.REGISTRY_PROPERTY_PARSERS.has(parser));
+
+                
+                const isSelector = /^@[aeprs](\[.*\])?$/.test(token.value);
+                const isResourceLocation =
+                    /^#?[a-z0-9_.-]+:[a-z0-9_/.:-]+(\{.*\})?(\[.*\])?$/.test(
+                        token.value
+                    );
+                const isNbt = /^\{.*\}$/.test(token.value);
+                const isNumber = /^-?\d+(\.\d+)?[bslfd]?$/i.test(token.value);
+                const isComplexByPattern =
+                    isSelector || isResourceLocation || isNbt;
+
+                if (isComplexByParser || isComplexByPattern) {
+                    
+                    const effectiveParser =
+                        parser ||
+                        (isSelector
+                            ? "minecraft:entity"
+                            : isResourceLocation
+                              ? "minecraft:resource_location"
+                              : isNbt
+                                ? "minecraft:nbt_compound_tag"
+                                : undefined);
+
                     const subTokens = this.parseComplexArgument(
                         token.value,
                         token.start,
-                        parser
+                        effectiveParser || ""
                     );
+
                     semanticTokens.push(...subTokens);
-                } else {
-                    // Default handling
+                } else if (isNumber) {
                     semanticTokens.push({
                         start: token.start,
                         length: token.length,
-                        tokenType: matchType,
+                        tokenType: "number",
+                        tokenModifiers: [],
+                    });
+                } else {
+                    
+                    const finalType = parser
+                        ? this.mapParserToTokenType(parser)
+                        : matchType;
+
+                    semanticTokens.push({
+                        start: token.start,
+                        length: token.length,
+                        tokenType: finalType,
                         tokenModifiers: [],
                     });
                 }
             } else {
-                // No match found in tree, stop or mark rest as error/generic
+                
                 break;
             }
 
             tokenIndex++;
         }
 
+        if (this.commandTokensCache.size >= this.MAX_CACHE_SIZE) {
+            const firstKey = this.commandTokensCache.keys().next().value;
+            if (firstKey !== undefined) {
+                this.commandTokensCache.delete(firstKey);
+            }
+        }
+        this.commandTokensCache.set(command, semanticTokens);
+
         return semanticTokens;
     }
 
-    // ── NBT tokenizer (recursive descent) ──────────────────────────
+    
+
+    public getNbtTokens(text: string): any[] {
+        return this.tokenizeNbt(text, 0);
+    }
 
     private tokenizeNbt(text: string, baseOffset: number): any[] {
         const tokens: any[] = [];
@@ -976,12 +1303,12 @@ export class SpyglassManager {
 
         const readQuotedString = () => {
             const s = pos;
-            const q = text[pos++]; // opening quote
+            const q = text[pos++]; 
             while (pos < text.length && text[pos] !== q) {
                 if (text[pos] === "\\") pos++;
                 pos++;
             }
-            if (pos < text.length) pos++; // closing quote
+            if (pos < text.length) pos++; 
             emit(s, pos - s, "string");
         };
 
@@ -1000,9 +1327,9 @@ export class SpyglassManager {
                 emit(start, word.length, "number");
             } else if (word.includes(":")) {
                 const ci = word.indexOf(":");
-                emit(start, ci, "namespace");
+                emit(start, ci, "type");
                 emit(start + ci, 1, "operator");
-                emit(start + ci + 1, word.length - ci - 1, "function");
+                emit(start + ci + 1, word.length - ci - 1, "type");
             } else {
                 emit(start, word.length, "string");
             }
@@ -1026,15 +1353,16 @@ export class SpyglassManager {
         };
 
         const readCompound = () => {
-            emit(pos, 1, "operator"); // {
+            emit(pos, 1, "operator"); 
             pos++;
             skipWs();
 
             while (pos < text.length && text[pos] !== "}") {
+                const startPos = pos;
                 skipWs();
                 if (pos >= text.length || text[pos] === "}") break;
 
-                // key
+                
                 const ks = pos;
                 if (text[pos] === '"' || text[pos] === "'") {
                     const q = text[pos++];
@@ -1051,18 +1379,23 @@ export class SpyglassManager {
 
                 skipWs();
 
-                // colon
+                
                 if (at(":")) {
                     emit(pos, 1, "operator");
                     pos++;
                 }
 
-                // value
+                
                 readValue();
 
                 skipWs();
                 if (at(",")) {
                     emit(pos, 1, "operator");
+                    pos++;
+                }
+
+                
+                if (pos === startPos) {
                     pos++;
                 }
             }
@@ -1074,11 +1407,11 @@ export class SpyglassManager {
         };
 
         const readList = () => {
-            emit(pos, 1, "operator"); // [
+            emit(pos, 1, "operator"); 
             pos++;
             skipWs();
 
-            // Typed array prefix: B; I; L;
+            
             if (
                 pos + 1 < text.length &&
                 "BIL".includes(text[pos]) &&
@@ -1091,6 +1424,7 @@ export class SpyglassManager {
             }
 
             while (pos < text.length && text[pos] !== "]") {
+                const startPos = pos;
                 skipWs();
                 if (pos >= text.length || text[pos] === "]") break;
 
@@ -1101,6 +1435,11 @@ export class SpyglassManager {
                     emit(pos, 1, "operator");
                     pos++;
                 }
+
+                
+                if (pos === startPos) {
+                    pos++;
+                }
             }
 
             if (at("]")) {
@@ -1109,14 +1448,14 @@ export class SpyglassManager {
             }
         };
 
-        // entry
+        
         skipWs();
         if (pos < text.length) readValue();
 
         return tokens;
     }
 
-    // ── Block-state tokenizer  [key=value,key2=value2] ───────────
+    
 
     private tokenizeBlockState(text: string, baseOffset: number): any[] {
         const tokens: any[] = [];
@@ -1137,7 +1476,7 @@ export class SpyglassManager {
             pos++;
 
             while (pos < text.length && text[pos] !== "]") {
-                // key
+                
                 const ks = pos;
                 while (pos < text.length && /[a-z_]/.test(text[pos])) pos++;
                 if (pos > ks) emit(ks, pos - ks, "property");
@@ -1147,7 +1486,7 @@ export class SpyglassManager {
                     pos++;
                 }
 
-                // value
+                
                 const vs = pos;
                 while (
                     pos < text.length &&
@@ -1172,7 +1511,7 @@ export class SpyglassManager {
         return { tokens, consumed: pos } as any;
     }
 
-    // ── NBT-path tokenizer  (Items[0].id, {a:1}.b) ──────────────
+    
 
     private tokenizeNbtPath(text: string, baseOffset: number): any[] {
         const tokens: any[] = [];
@@ -1191,9 +1530,9 @@ export class SpyglassManager {
         while (pos < text.length) {
             const ch = text[pos];
             if (ch === "{") {
-                // compound filter – delegate to NBT tokenizer
+                
                 const sub = text.substring(pos);
-                // find matching }
+                
                 let depth = 0;
                 let end = pos;
                 for (let i = pos; i < text.length; i++) {
@@ -1212,9 +1551,9 @@ export class SpyglassManager {
             } else if (ch === "[") {
                 emit(pos, 1, "operator");
                 pos++;
-                // index or compound filter
+                
                 if (pos < text.length && text[pos] === "{") {
-                    // compound filter inside []
+                    
                     let depth = 0;
                     let end = pos;
                     for (let i = pos; i < text.length; i++) {
@@ -1233,7 +1572,7 @@ export class SpyglassManager {
                     );
                     pos = end;
                 } else {
-                    // numeric index
+                    
                     const ns = pos;
                     while (pos < text.length && /[0-9]/.test(text[pos])) pos++;
                     if (pos > ns) emit(ns, pos - ns, "number");
@@ -1255,25 +1594,25 @@ export class SpyglassManager {
                 if (pos < text.length) pos++;
                 emit(s, pos - s, "property");
             } else {
-                // key segment
+                
                 const ks = pos;
                 while (pos < text.length && /[a-zA-Z0-9_]/.test(text[pos]))
                     pos++;
                 if (pos > ks) emit(ks, pos - ks, "property");
-                if (pos === ks) pos++; // safety advance
+                if (pos === ks) pos++; 
             }
         }
 
         return tokens;
     }
 
-    // ── Resource-ID suffix: [block-state]{nbt} ───────────────────
+    
 
     private tokenizeIdSuffix(text: string, baseOffset: number): any[] {
         const tokens: any[] = [];
         let pos = 0;
 
-        // Block state: [key=value,...]
+        
         if (pos < text.length && text[pos] === "[") {
             let depth = 0;
             let end = pos;
@@ -1296,7 +1635,7 @@ export class SpyglassManager {
             pos = end;
         }
 
-        // NBT: {compound}
+        
         if (pos < text.length && text[pos] === "{") {
             const nbtSlice = text.substring(pos);
             tokens.push(...this.tokenizeNbt(nbtSlice, baseOffset + pos));
@@ -1305,7 +1644,7 @@ export class SpyglassManager {
         return tokens;
     }
 
-    // ── Entity selector tokenizer  @e[key=value,key2=value2] ───
+    
 
     private tokenizeSelector(text: string, baseOffset: number): any[] {
         const tokens: any[] = [];
@@ -1313,54 +1652,69 @@ export class SpyglassManager {
 
         const emit = (start: number, len: number, type: string) => {
             if (len > 0) {
-                tokens.push({
+                const token = {
                     start: baseOffset + start,
                     length: len,
                     tokenType: type,
                     tokenModifiers: [],
-                });
+                };
+                tokens.push(token);
             }
         };
 
-        // @e
+        
         if (pos + 1 < text.length && text[pos] === "@") {
-            emit(pos, 2, "keyword");
+            emit(pos, 2, "enum"); 
             pos += 2;
         } else {
-            // player name or UUID
+            
             emit(0, text.length, "variable");
             return tokens;
         }
 
-        // [...]
+        
         if (pos >= text.length || text[pos] !== "[") return tokens;
 
-        emit(pos, 1, "operator"); // [
+        emit(pos, 1, "operator"); 
         pos++;
 
         while (pos < text.length && text[pos] !== "]") {
-            // key
+            const startPos = pos;
+            
+            while (pos < text.length && text[pos] === " ") pos++;
+            if (pos >= text.length || text[pos] === "]") break;
+
+            
             const keyStart = pos;
             while (pos < text.length && /[a-z_]/.test(text[pos])) pos++;
             if (pos > keyStart) emit(keyStart, pos - keyStart, "property");
 
-            // =
+            
+            while (pos < text.length && text[pos] === " ") pos++;
+
+            
             if (pos < text.length && text[pos] === "=") {
                 emit(pos, 1, "operator");
                 pos++;
             }
 
-            // ! (negation)
+            
+            while (pos < text.length && text[pos] === " ") pos++;
+
+            
             if (pos < text.length && text[pos] === "!") {
                 emit(pos, 1, "operator");
                 pos++;
             }
 
-            // value
+            
+            while (pos < text.length && text[pos] === " ") pos++;
+
+            
             const valueStart = pos;
 
             if (pos < text.length && text[pos] === "{") {
-                // NBT compound
+                
                 let depth = 0;
                 let nbtEnd = pos;
                 for (let i = pos; i < text.length; i++) {
@@ -1377,7 +1731,7 @@ export class SpyglassManager {
                 tokens.push(...this.tokenizeNbt(nbtSlice, baseOffset + pos));
                 pos = nbtEnd;
             } else if (pos < text.length && text[pos] === '"') {
-                // Quoted string
+                
                 const q = text[pos++];
                 while (pos < text.length && text[pos] !== q) {
                     if (text[pos] === "\\") pos++;
@@ -1386,7 +1740,7 @@ export class SpyglassManager {
                 if (pos < text.length) pos++;
                 emit(valueStart, pos - valueStart, "string");
             } else {
-                // Unquoted value: read until , or ]
+                
                 while (
                     pos < text.length &&
                     text[pos] !== "," &&
@@ -1396,9 +1750,9 @@ export class SpyglassManager {
                 }
                 const valueText = text.substring(valueStart, pos);
 
-                // Classify the value
+                
                 if (valueText.includes("..")) {
-                    // Range: ..10, 5..10, 5..
+                    
                     const parts = valueText.split("..");
                     if (parts[0].length > 0 && /^-?\d+$/.test(parts[0])) {
                         emit(valueStart, parts[0].length, "number");
@@ -1416,35 +1770,41 @@ export class SpyglassManager {
                         );
                     }
                 } else if (/^-?\d+(\.\d+)?$/.test(valueText)) {
-                    // Number
+                    
                     emit(valueStart, valueText.length, "number");
                 } else if (valueText === "true" || valueText === "false") {
-                    // Boolean
+                    
                     emit(valueStart, valueText.length, "enumMember");
                 } else if (valueText.includes(":")) {
-                    // Resource location
+                    
                     const ci = valueText.indexOf(":");
                     emit(valueStart, ci, "namespace");
                     emit(valueStart + ci, 1, "operator");
                     emit(
                         valueStart + ci + 1,
                         valueText.length - ci - 1,
-                        "function"
+                        "type"
                     );
                 } else {
-                    // Generic string value (tag names, etc.)
-                    emit(valueStart, valueText.length, "string");
+                    
+                    
+                    emit(valueStart, valueText.length, "class");
                 }
             }
 
-            // ,
+            
             if (pos < text.length && text[pos] === ",") {
                 emit(pos, 1, "operator");
                 pos++;
             }
+
+            
+            if (pos === startPos) {
+                pos++;
+            }
         }
 
-        // ]
+        
         if (pos < text.length && text[pos] === "]") {
             emit(pos, 1, "operator");
             pos++;
@@ -1453,7 +1813,7 @@ export class SpyglassManager {
         return tokens;
     }
 
-    // ── Main complex argument dispatcher ─────────────────────────
+    
 
     private parseComplexArgument(
         text: string,
@@ -1463,20 +1823,30 @@ export class SpyglassManager {
         const tokens: any[] = [];
 
         if (
-            parser.includes("entity") ||
             parser === "minecraft:score_holder" ||
             parser === "minecraft:game_profile"
         ) {
-            // Parse Selector: @e[type=cow,distance=..10]
+            if (text.startsWith("@")) {
+                return this.tokenizeSelector(text, startOffset);
+            } else {
+                tokens.push({
+                    start: startOffset,
+                    length: text.length,
+                    tokenType: "parameter",
+                    tokenModifiers: [],
+                });
+                return tokens;
+            }
+        } else if (parser.includes("entity")) {
             return this.tokenizeSelector(text, startOffset);
         } else if (
             parser === "minecraft:nbt_compound_tag" ||
             parser === "minecraft:nbt_tag"
         ) {
-            // Standalone NBT argument (e.g. /data merge ... {key:value})
+            
             return this.tokenizeNbt(text, startOffset);
         } else if (parser === "minecraft:nbt_path") {
-            // NBT path (e.g. Items[0].id, {a:1}.b)
+            
             return this.tokenizeNbtPath(text, startOffset);
         } else if (
             parser === "minecraft:resource_location" ||
@@ -1486,7 +1856,7 @@ export class SpyglassManager {
             parser === "minecraft:item_predicate" ||
             SpyglassManager.REGISTRY_PROPERTY_PARSERS.has(parser)
         ) {
-            // namespace:path  or  #namespace:path  or  path{nbt}  or  path[state]{nbt}
+            
             let tagOffset = 0;
             let workText = text;
             if (text.startsWith("#")) {
@@ -1507,11 +1877,24 @@ export class SpyglassManager {
                 const id = idMatch[0];
                 const idStart = startOffset + tagOffset;
                 const parts = id.split(":");
+
+                
+                let pathTokenType = "type"; 
+                if (parser === "minecraft:function") {
+                    pathTokenType = "method";
+                } else if (
+                    parser === "minecraft:resource_location" ||
+                    parser === "minecraft:loot_table" ||
+                    parser === "minecraft:loot_predicate"
+                ) {
+                    pathTokenType = "method";
+                }
+
                 if (parts.length > 1) {
                     tokens.push({
                         start: idStart,
                         length: parts[0].length,
-                        tokenType: "namespace",
+                        tokenType: pathTokenType,
                         tokenModifiers: [],
                     });
                     tokens.push({
@@ -1523,19 +1906,19 @@ export class SpyglassManager {
                     tokens.push({
                         start: idStart + parts[0].length + 1,
                         length: parts[1].length,
-                        tokenType: "function",
+                        tokenType: pathTokenType,
                         tokenModifiers: [],
                     });
                 } else {
                     tokens.push({
                         start: idStart,
                         length: id.length,
-                        tokenType: "function",
+                        tokenType: pathTokenType,
                         tokenModifiers: [],
                     });
                 }
 
-                // Suffix: [block-state]{nbt}
+                
                 if (workText.length > id.length) {
                     const remainder = workText.substring(id.length);
                     const remainderStart = idStart + id.length;
@@ -1560,6 +1943,8 @@ export class SpyglassManager {
 
     private mapParserToTokenType(parser?: string): string {
         if (!parser) return "variable";
+
+        
         if (parser === "brigadier:string" || parser === "brigadier:text")
             return "string";
         if (
@@ -1570,13 +1955,31 @@ export class SpyglassManager {
         )
             return "number";
         if (parser === "brigadier:bool") return "enumMember";
+
+        
         if (
             parser.startsWith("minecraft:entity") ||
-            parser === "minecraft:score_holder" ||
             parser === "minecraft:game_profile"
         )
-            return "variable";
-        if (parser === "minecraft:resource_location") return "property";
+            return "variable"; 
+        if (parser === "minecraft:score_holder") return "variable"; 
+
+        
+        if (parser === "minecraft:objective") return "class"; 
+        if (parser === "minecraft:objective_criteria") return "enum"; 
+        if (parser === "minecraft:team") return "class"; 
+
+        
+        if (parser === "minecraft:function") return "method"; 
+        if (
+            parser === "minecraft:loot_table" ||
+            parser === "minecraft:loot_predicate" ||
+            parser === "minecraft:loot_modifier"
+        )
+            return "method"; 
+        if (parser === "minecraft:resource_location") return "method"; 
+
+        
         if (
             parser === "minecraft:resource_key" ||
             parser === "minecraft:resource" ||
@@ -1584,7 +1987,9 @@ export class SpyglassManager {
             parser === "minecraft:resource_or_tag_key" ||
             parser === "minecraft:resource_selector"
         )
-            return "property";
+            return "type"; 
+
+        
         if (
             parser === "minecraft:block_state" ||
             parser === "minecraft:block_predicate"
@@ -1595,21 +2000,21 @@ export class SpyglassManager {
             parser === "minecraft:item_predicate"
         )
             return "type";
+
+        
         if (
-            parser === "minecraft:message" ||
-            parser === "minecraft:component" ||
-            parser === "minecraft:style"
+            parser === "minecraft:nbt_compound_tag" ||
+            parser === "minecraft:nbt_tag"
         )
-            return "string";
-        if (parser === "minecraft:swizzle") return "property";
-        if (parser === "minecraft:gamemode") return "enumMember";
+            return "interface"; 
+        if (parser === "minecraft:nbt_path") return "property"; 
+
+        
+        if (parser === "minecraft:gamemode") return "enum";
         if (parser === "minecraft:color" || parser === "minecraft:hex_color")
-            return "enumMember";
-        if (
-            parser === "minecraft:int_range" ||
-            parser === "minecraft:float_range"
-        )
-            return "number";
+            return "enum";
+
+        
         if (
             parser === "minecraft:block_pos" ||
             parser === "minecraft:column_pos" ||
@@ -1619,33 +2024,33 @@ export class SpyglassManager {
         )
             return "number";
         if (
-            parser === "minecraft:nbt_compound_tag" ||
-            parser === "minecraft:nbt_tag" ||
-            parser === "minecraft:nbt_path"
+            parser === "minecraft:int_range" ||
+            parser === "minecraft:float_range"
         )
-            return "property";
+            return "number";
+
+        
         if (
-            parser === "minecraft:loot_table" ||
-            parser === "minecraft:loot_predicate" ||
-            parser === "minecraft:loot_modifier"
+            parser === "minecraft:message" ||
+            parser === "minecraft:component" ||
+            parser === "minecraft:style"
         )
-            return "property";
-        if (parser === "minecraft:function") return "function";
-        if (
-            parser === "minecraft:objective" ||
-            parser === "minecraft:objective_criteria"
-        )
-            return "variable";
-        if (parser === "minecraft:team") return "variable";
-        if (parser === "minecraft:time") return "number";
+            return "string";
+
+        
+        if (parser === "minecraft:dimension") return "namespace";
+
+        
+        if (parser === "minecraft:swizzle") return "property";
+        if (parser === "minecraft:operation") return "operator";
         if (
             parser === "minecraft:item_slot" ||
             parser === "minecraft:item_slots"
         )
             return "property";
-        if (parser === "minecraft:dimension") return "namespace";
-        if (parser === "minecraft:operation") return "operator";
         if (parser === "minecraft:scoreboard_slot") return "property";
+        if (parser === "minecraft:time") return "number";
+
         return "variable";
     }
 
@@ -1688,7 +2093,7 @@ export class SpyglassManager {
                 }
             } else {
                 if (startIndex !== -1) {
-                    // Only add if we started a token
+                    
                     current += c;
                 }
             }
@@ -1715,7 +2120,7 @@ export class SpyglassManager {
                         resolve(JSON.parse(data));
                         return;
                     } catch (e) {
-                        // ignore
+                        
                     }
                 }
             }
@@ -1757,6 +2162,97 @@ export class SpyglassManager {
 
     private getFallbackCompletions(command: string): any[] {
         return [];
+    }
+
+    getFallbackSemanticTokens(command: string): any[] {
+        const tokens: any[] = [];
+        const ranges = this.tokenizeWithRanges(command);
+
+        
+        for (let i = 0; i < ranges.length; i++) {
+            const token = ranges[i];
+            let tokenValue = token.value;
+
+            
+            if (tokenValue.startsWith("/")) {
+                tokenValue = tokenValue.substring(1);
+            }
+
+            
+            if (i === 0) {
+                tokens.push({
+                    start: token.start + (token.value.startsWith("/") ? 1 : 0),
+                    length: tokenValue.length,
+                    tokenType: "keyword", 
+                    tokenModifiers: [],
+                });
+                continue;
+            }
+
+            
+            if (tokenValue.match(/^@[aeprs](\[.*\])?$/)) {
+                const subTokens = this.tokenizeSelector(
+                    tokenValue,
+                    token.start
+                );
+                tokens.push(...subTokens);
+                continue; 
+            } else if (tokenValue.match(/^#?[a-z0-9_.-]+:[a-z0-9_/.:-]+$/)) {
+                const parts = tokenValue.split(":");
+                tokens.push({
+                    start: token.start,
+                    length: parts[0].length,
+                    tokenType: "method",
+                    tokenModifiers: [],
+                });
+                tokens.push({
+                    start: token.start + parts[0].length,
+                    length: 1,
+                    tokenType: "operator",
+                    tokenModifiers: [],
+                });
+                tokens.push({
+                    start: token.start + parts[0].length + 1,
+                    length: parts[1].length,
+                    tokenType: "method",
+                    tokenModifiers: [],
+                });
+            }
+            
+            else if (tokenValue.match(/^-?\d+(\.\d+)?[bslfd]?$/i)) {
+                tokens.push({
+                    start: token.start,
+                    length: token.length,
+                    tokenType: "number",
+                    tokenModifiers: [],
+                });
+                continue;
+            }
+            
+            else if (
+                tokenValue.match(
+                    /^(run|as|at|if|unless|store|positioned|rotated|anchored|objectives|players|add|set|remove|get|modify|merge|on|passengers)$/
+                )
+            ) {
+                tokens.push({
+                    start: token.start,
+                    length: token.length,
+                    tokenType: "function",
+                    tokenModifiers: [],
+                });
+            }
+            
+            else {
+                tokens.push({
+                    start: token.start,
+                    length: token.length,
+                    tokenType: "variable",
+                    tokenModifiers: [],
+                });
+            }
+        }
+
+        return tokens;
     }
 }
 
